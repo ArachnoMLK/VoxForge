@@ -10,6 +10,9 @@ public sealed class NeedsPageToolException : Exception
     public NeedsPageToolException() : base("This link is a web page; yt-dlp is needed to extract its audio.") { }
 }
 
+/// <summary>yt-dlp ran but could not get the sound (often fixed by updating yt-dlp).</summary>
+public sealed class PageToolFailedException(string message) : Exception(message);
+
 /// <summary>
 /// Downloads a sound from a link into a temporary file, ready to be added to a soundboard.
 /// Direct links to audio files are fetched over HTTP. Links to pages (video sites) are handed
@@ -55,6 +58,44 @@ public static class LinkImporter
             try
             {
                 string candidate = Path.Combine(folder.Trim('"'), "yt-dlp.exe");
+                if (File.Exists(candidate)) return candidate;
+            }
+            catch (ArgumentException)
+            {
+                // Malformed PATH entry.
+            }
+        }
+        return null;
+    }
+
+    /// <summary>
+    /// Installs (or updates) yt-dlp with winget, in a visible console so the user sees and answers winget's prompts.
+    /// Only called when the user clicks the install button. Returns the tool path, or null if it is still missing.
+    /// </summary>
+    public static async Task<string?> InstallPageToolAsync(bool update)
+    {
+        string winget = FindWinget() ?? throw new InvalidOperationException("winget (App Installer) est introuvable sur ce PC");
+        var info = new ProcessStartInfo(winget) { UseShellExecute = false };
+        foreach (var arg in new[] { update ? "upgrade" : "install", "--id", "yt-dlp.yt-dlp", "--exact", "--source", "winget" })
+            info.ArgumentList.Add(arg);
+        using var process = Process.Start(info) ?? throw new InvalidOperationException("winget n'a pas démarré");
+        await process.WaitForExitAsync();
+        return FindPageTool();
+    }
+
+    /// <summary>Opens the yt-dlp page, for a manual install.</summary>
+    public static void OpenPageToolSite() =>
+        Process.Start(new ProcessStartInfo("https://github.com/yt-dlp/yt-dlp#installation") { UseShellExecute = true });
+
+    private static string? FindWinget()
+    {
+        string local = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Microsoft", "WindowsApps", "winget.exe");
+        if (File.Exists(local)) return local;
+        foreach (var folder in (Environment.GetEnvironmentVariable("PATH") ?? "").Split(Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries))
+        {
+            try
+            {
+                string candidate = Path.Combine(folder.Trim('"'), "winget.exe");
                 if (File.Exists(candidate)) return candidate;
             }
             catch (ArgumentException)
@@ -201,7 +242,7 @@ public static class LinkImporter
         if (process.ExitCode == 0 && file is not null) return file;
 
         string? error = output.LastOrDefault(l => l.StartsWith("ERROR", StringComparison.OrdinalIgnoreCase));
-        throw new InvalidDataException(error is null ? "yt-dlp n'a pas pu récupérer le son." : error.Replace("ERROR:", "").Trim());
+        throw new PageToolFailedException(error is null ? "yt-dlp n'a pas pu récupérer le son." : error.Replace("ERROR:", "").Trim());
     }
 
     private static string Sanitize(string name)

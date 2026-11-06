@@ -36,6 +36,9 @@ public sealed class AppSettings
     public bool CloseToTray { get; set; } = true;
     public bool TrayHintShown { get; set; }
 
+    /// <summary>Check GitHub for new versions and install them when the app quits.</summary>
+    public bool AutoUpdate { get; set; } = true;
+
     /// <summary>Target id ("action:…", "voice:…", "pad:…") to serialised <see cref="Hotkey"/>. Null on first run: defaults apply.</summary>
     public Dictionary<string, string>? Hotkeys { get; set; }
 

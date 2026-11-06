@@ -21,6 +21,12 @@ public partial class MainWindow : Window
     private readonly AppSettings settings = AppSettings.Load();
     private readonly ObservableCollection<SoundBoardPage> boards = new();
     private readonly DispatcherTimer meterTimer;
+    private readonly DispatcherTimer updateTimer;
+    private UpdateInfo? foundUpdate;
+    private string? stagedUpdate;
+    private bool checkingUpdate;
+    private int shownSoundState = -1;
+    private bool installUpdateOnExit = true;
     private readonly List<HotkeyTarget> actionTargets;
     private HotkeyManager? hotkeys;
     private TrayIcon? tray;
@@ -68,6 +74,7 @@ public partial class MainWindow : Window
             new("action:toggleEffects", "Activer / couper les effets", ToggleEffects),
             new("action:toggleMute", "Couper / rétablir le micro", ToggleMute),
             new("action:stopSounds", "Arrêter tous les sons", () => engine.Soundboard.StopAll()),
+            new("action:pauseSounds", "Pause / reprendre les sons", TogglePauseSounds),
             new("action:nextVoice", "Voix suivante", () => StepVoice(+1)),
             new("action:previousVoice", "Voix précédente", () => StepVoice(-1)),
             new("action:toggleEngine", "Démarrer / arrêter VoxForge", () => OnStartStop(this, new RoutedEventArgs())),
@@ -88,6 +95,15 @@ public partial class MainWindow : Window
             UpdateTray();
         };
         Loaded += (_, _) => Navigate(settings.Page);
+
+        // First check shortly after start, then every 6 hours.
+        updateTimer = new DispatcherTimer(TimeSpan.FromSeconds(8), DispatcherPriority.Background, async (_, _) =>
+        {
+            updateTimer!.Interval = TimeSpan.FromHours(6);
+            if (settings.AutoUpdate) await CheckForUpdateAsync(manual: false);
+        }, Dispatcher);
+        updateTimer.Start();
+        ShowUpdateState();
     }
 
     // ---------- Window chrome and navigation ----------
@@ -172,6 +188,7 @@ public partial class MainWindow : Window
             ["action:toggleEffects"] = new Hotkey(ctrlAlt, Key.E).Serialize(),
             ["action:toggleMute"] = new Hotkey(ctrlAlt, Key.M).Serialize(),
             ["action:stopSounds"] = new Hotkey(ctrlAlt, Key.S).Serialize(),
+            ["action:pauseSounds"] = new Hotkey(ctrlAlt, Key.P).Serialize(),
             ["action:nextVoice"] = new Hotkey(ctrlAlt, Key.Right).Serialize(),
             ["action:previousVoice"] = new Hotkey(ctrlAlt, Key.Left).Serialize(),
         };
@@ -485,7 +502,20 @@ public partial class MainWindow : Window
         OutputMeter.Value = outputLevel;
 
         if (SoundPads.ItemsSource is IEnumerable<SoundClip> pads)
-            foreach (var clip in pads) clip.PlayProgress = engine.IsRunning ? engine.Soundboard.ProgressOf(clip) : -1;
+            foreach (var clip in pads)
+            {
+                clip.PlayProgress = engine.IsRunning ? engine.Soundboard.ProgressOf(clip) : -1;
+                clip.IsPaused = clip.IsPlaying && engine.Soundboard.IsPaused(clip);
+            }
+
+        int state = engine.IsRunning ? engine.Soundboard.State : 0;
+        if (state != shownSoundState)
+        {
+            shownSoundState = state;
+            PauseSoundsButton.IsEnabled = state != 0;
+            PauseSoundsIcon.Text = state == 2 ? "\uE768" : "\uE769";
+            PauseSoundsText.Text = state == 2 ? "Reprendre" : "Pause";
+        }
     }
 
     /// <summary>Peak 0..1 to a 60 dB meter scale.</summary>
@@ -713,7 +743,9 @@ public partial class MainWindow : Window
         }
         if (clip.IsPlaying)
         {
-            engine.Soundboard.Stop(clip); // a second click stops it, handy for music
+            // A second click pauses it, a third one resumes from the same place (handy for music).
+            bool paused = engine.Soundboard.TogglePause(clip);
+            SetStatus((paused ? "En pause · " : "En direct · ") + clip.Name, ok: !paused);
             return;
         }
         try
@@ -752,6 +784,31 @@ public partial class MainWindow : Window
             return;
         }
 
+        for (int attempt = 0; attempt < 2; attempt++)
+        {
+            var failure = await DownloadLinkAsync(board, url);
+            if (failure is null) return;
+
+            // The download bar is gone by now; offer to install or update yt-dlp.
+            bool missing = failure is NeedsPageToolException;
+            string message = missing
+                ? "Ce lien mène à une page (vidéo, musique en ligne), pas directement à un fichier son.\n\n" +
+                  "Pour ces sites, VoxForge s'appuie sur yt-dlp, un outil gratuit et open source. " +
+                  "« Installer yt-dlp » l'installe avec winget, l'installeur de Windows : une fenêtre de commande s'ouvre, " +
+                  "réponds « Y » si elle te demande d'accepter. Le lien est ensuite retenté tout seul.\n\n" +
+                  "Un lien direct vers un .mp3 ou un .wav marche sans rien installer."
+                : "yt-dlp n'a pas pu récupérer ce son :\n" + failure.Message + "\n\n" +
+                  "Les sites vidéo changent souvent : mettre yt-dlp à jour règle la plupart des erreurs. Le lien est ensuite retenté tout seul.";
+            if (attempt > 0 || DialogShell.Show(this, "Ajouter depuis un lien", message,
+                    "Fermer", missing ? "Installer yt-dlp" : "Mettre à jour yt-dlp") != 1)
+                return;
+            if (!await InstallPageToolAsync(update: !missing)) return;
+        }
+    }
+
+    /// <summary>Downloads and adds one link. Returns null on success or when handled, else the yt-dlp problem to offer a fix for.</summary>
+    private async Task<Exception?> DownloadLinkAsync(SoundBoardPage board, string url)
+    {
         string temp = Path.Combine(Path.GetTempPath(), "VoxForge", "Downloads", Guid.NewGuid().ToString("N"));
         download = new CancellationTokenSource();
         AddLinkButton.IsEnabled = false;
@@ -770,24 +827,27 @@ public partial class MainWindow : Window
             board.Clips.Add(clip);
             ApplyHotkeys();
             SetStatus($"« {clip.Name} » ajouté à « {board.Name} »", ok: true);
+            return null;
         }
         catch (OperationCanceledException)
         {
             SetStatus("Téléchargement annulé");
+            return null;
         }
-        catch (NeedsPageToolException)
+        catch (NeedsPageToolException ex)
         {
-            SetStatus("Lien de page web : installe yt-dlp pour ce site", warn: true);
-            MessageBox.Show(this,
-                "Ce lien mène à une page (vidéo, musique en ligne), pas directement à un fichier son.\n\n" +
-                "Pour ces sites, VoxForge s'appuie sur yt-dlp, un outil gratuit. Installe-le une fois, par exemple avec la commande :\n" +
-                "    winget install yt-dlp.yt-dlp\n" +
-                "puis relance VoxForge et colle à nouveau le lien.\n\nUn lien direct vers un .mp3 ou un .wav marche sans rien installer.",
-                "Ajouter depuis un lien", MessageBoxButton.OK, MessageBoxImage.Information);
+            SetStatus("Lien de page web : yt-dlp est nécessaire pour ce site", warn: true);
+            return ex;
+        }
+        catch (PageToolFailedException ex)
+        {
+            SetStatus("Lien impossible : " + ex.Message, warn: true);
+            return ex;
         }
         catch (Exception ex)
         {
             SetStatus("Lien impossible : " + ex.Message, warn: true);
+            return null;
         }
         finally
         {
@@ -797,6 +857,35 @@ public partial class MainWindow : Window
             AddLinkButton.IsEnabled = CurrentBoard is { IsBuiltIn: false };
             try { Directory.Delete(temp, recursive: true); } catch { /* temp folder */ }
         }
+    }
+
+    /// <summary>Runs winget for yt-dlp after the user clicked the button. Returns true when yt-dlp is available.</summary>
+    private async Task<bool> InstallPageToolAsync(bool update)
+    {
+        SetStatus(update ? "Mise à jour de yt-dlp…" : "Installation de yt-dlp…");
+        AddLinkButton.IsEnabled = false;
+        try
+        {
+            string? tool = await LinkImporter.InstallPageToolAsync(update);
+            if (tool is not null)
+            {
+                SetStatus(update ? "yt-dlp à jour, nouvel essai…" : "yt-dlp installé, téléchargement du lien…", ok: true);
+                return true;
+            }
+            SetStatus("yt-dlp n'a pas été installé", warn: true);
+        }
+        catch (Exception ex)
+        {
+            SetStatus("Installation de yt-dlp impossible : " + ex.Message, warn: true);
+            if (DialogShell.Show(this, "yt-dlp", "Installation automatique impossible : " + ex.Message +
+                    "\n\nOuvrir la page de yt-dlp pour l'installer à la main ?", "Fermer", "Ouvrir la page") == 1)
+                LinkImporter.OpenPageToolSite();
+        }
+        finally
+        {
+            AddLinkButton.IsEnabled = CurrentBoard is { IsBuiltIn: false };
+        }
+        return false;
     }
 
     private void OnCancelDownload(object sender, RoutedEventArgs e) => download?.Cancel();
@@ -840,6 +929,19 @@ public partial class MainWindow : Window
 
     private void OnStopSounds(object sender, RoutedEventArgs e) => engine.Soundboard.StopAll();
 
+    private void OnPauseSounds(object sender, RoutedEventArgs e) => TogglePauseSounds();
+
+    private void TogglePauseSounds()
+    {
+        if (engine.Soundboard.State == 0) return;
+        SetStatus(engine.Soundboard.TogglePauseAll() ? "Sons en pause" : "Sons repris", ok: engine.IsRunning);
+    }
+
+    private void OnStopPad(object sender, RoutedEventArgs e)
+    {
+        if ((sender as FrameworkElement)?.DataContext is SoundClip clip) engine.Soundboard.Stop(clip);
+    }
+
     private void OnSoundVolumeChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
     {
         if (loading) return;
@@ -860,12 +962,92 @@ public partial class MainWindow : Window
         ApplyHotkeys();
     }
 
+    // ---------- Updates ----------
+
+    private void OnAutoUpdateChanged(object sender, RoutedEventArgs e)
+    {
+        if (loading) return;
+        settings.AutoUpdate = AutoUpdateCheck.IsChecked == true;
+        settings.Save();
+        if (settings.AutoUpdate) _ = CheckForUpdateAsync(manual: false);
+        ShowUpdateState();
+    }
+
+    private async void OnCheckUpdate(object sender, RoutedEventArgs e) => await CheckForUpdateAsync(manual: true);
+
+    /// <summary>Looks for a newer release and downloads it in the background.</summary>
+    private async Task CheckForUpdateAsync(bool manual)
+    {
+        if (checkingUpdate || stagedUpdate is not null) return;
+        checkingUpdate = true;
+        CheckUpdateButton.IsEnabled = false;
+        UpdateStatusText.Text = "Recherche d'une nouvelle version…";
+        try
+        {
+            foundUpdate = await Updater.CheckAsync(CancellationToken.None);
+            if (foundUpdate is null)
+            {
+                UpdateStatusText.Text = $"Tu as la dernière version (v{Updater.Current}).";
+                if (manual) SetStatus("VoxForge est à jour", ok: engine.IsRunning);
+                return;
+            }
+
+            var progress = new Progress<double>(p => UpdateStatusText.Text = $"Téléchargement de la v{foundUpdate.Version}… {p:P0}");
+            stagedUpdate = await Updater.DownloadAsync(foundUpdate, progress, CancellationToken.None);
+            SetStatus($"Mise à jour v{foundUpdate.Version} prête", ok: true);
+            tray?.Notify("Mise à jour prête", $"VoxForge v{foundUpdate.Version} s'installera quand tu quitteras l'appli.");
+        }
+        catch (Exception ex)
+        {
+            UpdateStatusText.Text = "Vérification impossible : " + ex.Message;
+            if (manual) SetStatus("Mise à jour impossible : " + ex.Message, warn: true);
+        }
+        finally
+        {
+            checkingUpdate = false;
+            CheckUpdateButton.IsEnabled = true;
+            ShowUpdateState();
+        }
+    }
+
+    private void ShowUpdateState()
+    {
+        bool ready = stagedUpdate is not null && foundUpdate is not null;
+        UpdateButton.Visibility = ready ? Visibility.Visible : Visibility.Collapsed;
+        if (ready)
+        {
+            UpdateButtonText.Text = $"Mettre à jour (v{foundUpdate!.Version})";
+            UpdateStatusText.Text = $"La v{foundUpdate.Version} est prête : elle s'installe quand tu quittes VoxForge.";
+            WindowLook.Reveal(UpdateButton);
+        }
+        else if (!checkingUpdate && string.IsNullOrEmpty(UpdateStatusText.Text))
+        {
+            UpdateStatusText.Text = $"Version installée : v{Updater.Current}";
+        }
+    }
+
+    private void OnApplyUpdate(object sender, RoutedEventArgs e)
+    {
+        if (stagedUpdate is null) return;
+        try
+        {
+            Updater.ScheduleInstall(stagedUpdate, restart: true);
+            installUpdateOnExit = false;
+            QuitApp();
+        }
+        catch (Exception ex)
+        {
+            SetStatus("Mise à jour impossible : " + ex.Message, warn: true);
+        }
+    }
+
     // ---------- Settings ----------
 
     private void ApplySettingsToUi()
     {
         MonitorCheck.IsChecked = settings.MonitorEnabled;
         TrayCheck.IsChecked = settings.CloseToTray;
+        AutoUpdateCheck.IsChecked = settings.AutoUpdate;
         GainSlider.Value = settings.InputGain;
         SoundVolume.Value = settings.SoundboardVolume;
         engine.InputGain = (float)settings.InputGain;
@@ -902,5 +1084,11 @@ public partial class MainWindow : Window
         settings.Save();
         hotkeys?.Dispose();
         engine.Dispose();
+
+        // A downloaded update is installed on the way out; VoxForge opens on the new version next time.
+        if (stagedUpdate is not null && installUpdateOnExit)
+        {
+            try { Updater.ScheduleInstall(stagedUpdate, restart: false); } catch { /* retried at next start */ }
+        }
     }
 }

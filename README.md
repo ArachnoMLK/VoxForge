@@ -35,6 +35,26 @@ Without a cable, enable "M'écouter dans le casque" to hear the result.
 - User boards are folders under `%AppData%\VoxForge\Boards`; add files, drop folders, or paste a link.
 - Links: a direct audio file is downloaded over HTTP; pages (YouTube, SoundCloud…) use `yt-dlp` if the user installed it.
   The sound is then saved in the board. Clips can be up to 10 minutes long, so music works too.
+  When yt-dlp is missing (or fails), the dialog offers "Installer yt-dlp" / "Mettre à jour yt-dlp", which runs
+  `winget install|upgrade --id yt-dlp.yt-dlp` in a visible console, only on that click, then retries the link.
+- Playback: click a playing pad to pause it, click again to resume. "Pause" pauses or resumes every sound
+  (hotkey Ctrl+Alt+P on new installs); right-click a pad for "Arrêter ce son".
+
+## Updates and releases
+
+VoxForge checks `https://api.github.com/repos/ArachnoMLK/VoxForge/releases/latest` at start and every 6 hours
+(Settings > "Mises à jour automatiques", on by default). A newer release is downloaded in the background,
+checked (SHA-256 file when present, and the version of `VoxForge.dll` must match the tag), then copied over the
+app folder once VoxForge exits; the title-bar button installs it and restarts at once.
+The repository (or at least its releases) must be public: the check does not sign in to GitHub.
+
+To publish a release: bump `<Version>` in `src/VoxForge/VoxForge.csproj`, commit, push, then
+
+```
+powershell -ExecutionPolicy Bypass -File tools/publish-release.ps1 -Upload
+```
+
+It builds `publish/VoxForge-win-x64.zip` plus its `.sha256` and creates the GitHub release `vX.Y.Z`.
 
 ## Layout
 
@@ -43,6 +63,7 @@ Without a cable, enable "M'écouter dans le casque" to hear the result.
 - `Audio/Soundboard.cs` pad playback mixer, file decoding, built-in synthesised sounds.
 - `Audio/SoundPacks.cs` the ready-made built-in boards (meme and retro-game style sounds, all synthesised).
 - `LinkImporter.cs` downloads a sound from a link (direct file, or a page through yt-dlp).
+- `Updater.cs` automatic updates from GitHub releases.
 - `CableInstaller.cs` fetches and starts the signed VB-Cable setup on request.
 - `Ui.cs` themed dialog shell, smooth wheel scrolling, page transitions, Windows 11 frame tweaks.
 - `VoicePreset.cs` ready-made voices (combinations of effects).

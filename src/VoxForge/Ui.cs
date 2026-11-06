@@ -73,6 +73,49 @@ public static class DialogShell
         };
         return dialog;
     }
+
+    /// <summary>
+    /// Themed message box. <paramref name="buttons"/> are listed left to right; the last one is the main
+    /// (default) action. Returns the index of the clicked button, or -1 when the dialog is closed with Escape.
+    /// </summary>
+    public static int Show(Window owner, string title, string message, params string[] buttons)
+    {
+        if (buttons.Length == 0) buttons = new[] { "OK" };
+        Window? dialog = null;
+        int choice = -1;
+        var row = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right, Margin = new Thickness(0, 18, 0, 0) };
+        for (int i = 0; i < buttons.Length; i++)
+        {
+            int index = i;
+            bool main = i == buttons.Length - 1;
+            var button = new Button
+            {
+                Content = buttons[i],
+                MinWidth = 96,
+                Margin = new Thickness(0, 0, main ? 0 : 10, 0),
+                IsDefault = main,
+                IsCancel = i == 0 && buttons.Length > 1,
+            };
+            if (main) button.Style = (Style)owner.FindResource("PrimaryButton");
+            button.Click += (_, _) =>
+            {
+                choice = index;
+                dialog!.DialogResult = true;
+            };
+            row.Children.Add(button);
+        }
+
+        var panel = new StackPanel();
+        panel.Children.Add(new TextBlock { Text = message, TextWrapping = TextWrapping.Wrap, LineHeight = 19 });
+        panel.Children.Add(row);
+        dialog = Create(owner, title, panel, 440);
+        dialog.KeyDown += (_, e) =>
+        {
+            if (e.Key == Key.Escape) dialog.DialogResult = false;
+        };
+        dialog.ShowDialog();
+        return choice;
+    }
 }
 
 /// <summary>Animated pixel scrolling for a ScrollViewer: the mouse wheel glides instead of jumping.</summary>

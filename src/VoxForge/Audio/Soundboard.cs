@@ -53,6 +53,20 @@ public sealed class SoundClip : Observable
 
     public bool IsPlaying => playProgress >= 0;
 
+    private bool isPaused;
+
+    /// <summary>The pad is on hold: it keeps its place and resumes from there. Set by the UI timer.</summary>
+    public bool IsPaused
+    {
+        get => isPaused;
+        set
+        {
+            if (isPaused == value) return;
+            isPaused = value;
+            Notify();
+        }
+    }
+
     /// <summary>True once decoded at this rate, so playing it will not stall.</summary>
     public bool IsReady(int sampleRate)
     {
@@ -159,6 +173,55 @@ public sealed class Soundboard
         }
     }
 
+    /// <summary>Pauses the clip, or resumes it if it was paused. Returns true when it is now paused.</summary>
+    public bool TogglePause(SoundClip clip)
+    {
+        lock (gate)
+        {
+            var mine = playing.Where(p => p.Clip == clip).ToList();
+            if (mine.Count == 0) return false;
+            bool pause = !mine.All(p => p.Paused);
+            foreach (var p in mine) p.Paused = pause;
+            return pause;
+        }
+    }
+
+    public bool IsPaused(SoundClip clip)
+    {
+        lock (gate)
+        {
+            bool any = false;
+            foreach (var p in playing)
+            {
+                if (p.Clip != clip) continue;
+                if (!p.Paused) return false;
+                any = true;
+            }
+            return any;
+        }
+    }
+
+    /// <summary>Pauses every playing sound, or resumes them all when everything is already paused. Returns true when paused.</summary>
+    public bool TogglePauseAll()
+    {
+        lock (gate)
+        {
+            if (playing.Count == 0) return false;
+            bool pause = !playing.All(p => p.Paused);
+            foreach (var p in playing) p.Paused = pause;
+            return pause;
+        }
+    }
+
+    /// <summary>0 when silent, 1 when at least one sound is playing, 2 when every sound is paused.</summary>
+    public int State
+    {
+        get
+        {
+            lock (gate) return playing.Count == 0 ? 0 : playing.All(p => p.Paused) ? 2 : 1;
+        }
+    }
+
     public void Stop(SoundClip clip)
     {
         lock (gate) playing.RemoveAll(p => p.Clip == clip);
@@ -188,6 +251,7 @@ public sealed class Soundboard
             for (int p = playing.Count - 1; p >= 0; p--)
             {
                 var playback = playing[p];
+                if (playback.Paused) continue;
                 int available = Math.Min(count, playback.Samples.Length - playback.Position);
                 for (int i = 0; i < available; i++)
                     destination[i] += playback.Samples[playback.Position + i] * volume;
@@ -208,6 +272,7 @@ public sealed class Soundboard
         public SoundClip Clip { get; }
         public float[] Samples { get; }
         public int Position { get; set; }
+        public bool Paused { get; set; }
     }
 }
 
