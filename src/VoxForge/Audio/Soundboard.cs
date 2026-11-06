@@ -6,8 +6,10 @@ namespace VoxForge.Audio;
 /// <summary>A soundboard pad: either a user file or a sound synthesised by the app.</summary>
 public sealed class SoundClip : Observable
 {
-    private const int MaxSeconds = 30;
+    /// <summary>Long enough for a whole song; longer files are cut.</summary>
+    public const int MaxSeconds = 600;
     private string hotkeyText = "";
+    private double playProgress = -1;
     private readonly object gate = new();
     private readonly Func<int, float[]>? generator;
     private float[]? cache;
@@ -35,6 +37,28 @@ public sealed class SoundClip : Observable
         }
     }
 
+    /// <summary>Position of the newest playback, 0..1, or -1 when the pad is silent. Set by the UI timer.</summary>
+    public double PlayProgress
+    {
+        get => playProgress;
+        set
+        {
+            if (Math.Abs(playProgress - value) < 0.002) return;
+            bool wasPlaying = IsPlaying;
+            playProgress = value;
+            Notify();
+            if (wasPlaying != IsPlaying) Notify(nameof(IsPlaying));
+        }
+    }
+
+    public bool IsPlaying => playProgress >= 0;
+
+    /// <summary>True once decoded at this rate, so playing it will not stall.</summary>
+    public bool IsReady(int sampleRate)
+    {
+        lock (gate) return cache is not null && cacheRate == sampleRate;
+    }
+
     public static SoundClip FromFile(string path) => new(Path.GetFileNameWithoutExtension(path), path, null);
 
     public static SoundClip Synth(string name, Func<int, float[]> generator) => new(name, null, generator);
@@ -46,11 +70,24 @@ public sealed class SoundClip : Observable
         {
             if (cache is null || cacheRate != sampleRate)
             {
-                cache = generator is not null ? generator(sampleRate) : Decode(FilePath!, sampleRate);
+                cache = generator is not null ? Normalize(generator(sampleRate)) : Decode(FilePath!, sampleRate);
                 cacheRate = sampleRate;
             }
             return cache;
         }
+    }
+
+    /// <summary>Synthesised sounds all peak at the same level, so no pad is much louder than another.</summary>
+    private static float[] Normalize(float[] samples)
+    {
+        float peak = 0;
+        foreach (var s in samples) peak = Math.Max(peak, Math.Abs(s));
+        if (peak > 0)
+        {
+            float gain = 0.75f / peak;
+            for (int i = 0; i < samples.Length; i++) samples[i] *= gain;
+        }
+        return samples;
     }
 
     private static float[] Decode(string path, int sampleRate)
@@ -118,8 +155,24 @@ public sealed class Soundboard
         lock (gate)
         {
             if (playing.Count >= MaxVoices) playing.RemoveAt(0);
-            playing.Add(new Playback(samples));
+            playing.Add(new Playback(clip, samples));
         }
+    }
+
+    public void Stop(SoundClip clip)
+    {
+        lock (gate) playing.RemoveAll(p => p.Clip == clip);
+    }
+
+    /// <summary>Progress 0..1 of the newest playback of the clip, or -1 when it is not playing.</summary>
+    public double ProgressOf(SoundClip clip)
+    {
+        lock (gate)
+        {
+            for (int i = playing.Count - 1; i >= 0; i--)
+                if (playing[i].Clip == clip) return (double)playing[i].Position / playing[i].Samples.Length;
+        }
+        return -1;
     }
 
     public void StopAll()
@@ -146,7 +199,13 @@ public sealed class Soundboard
 
     private sealed class Playback
     {
-        public Playback(float[] samples) => Samples = samples;
+        public Playback(SoundClip clip, float[] samples)
+        {
+            Clip = clip;
+            Samples = samples;
+        }
+
+        public SoundClip Clip { get; }
         public float[] Samples { get; }
         public int Position { get; set; }
     }
@@ -212,10 +271,10 @@ public static class BuiltInSounds
         (Tone(1320, t) * 0.5 + Tone(1320 * 2.76, t) * 0.25 * Math.Exp(-t * 3) + Tone(1320 * 5.4, t) * 0.12 * Math.Exp(-t * 6))
         * Math.Exp(-t * 2.4) * Math.Min(1, t / 0.002));
 
-    private static double Tone(double frequency, double t) => Math.Sin(2 * Math.PI * frequency * t);
+    internal static double Tone(double frequency, double t) => Math.Sin(2 * Math.PI * frequency * t);
 
     /// <summary>Linear attack then exponential-ish fade to zero at <paramref name="length"/>.</summary>
-    private static double Envelope(double t, double attack, double length)
+    internal static double Envelope(double t, double attack, double length)
     {
         if (t < 0 || t > length) return 0;
         if (t < attack) return t / attack;
@@ -223,7 +282,7 @@ public static class BuiltInSounds
         return (1 - x) * (1 - x);
     }
 
-    private static float[] Render(int rate, double seconds, Func<double, double> signal)
+    internal static float[] Render(int rate, double seconds, Func<double, double> signal)
     {
         var samples = new float[(int)(rate * seconds)];
         for (int i = 0; i < samples.Length; i++)

@@ -29,6 +29,8 @@ public sealed class AppSettings
     public double InputGain { get; set; } = 1.0;
     public double SoundboardVolume { get; set; } = 0.8;
     public string? Board { get; set; }
+    /// <summary>Last page shown: voices, effects, sounds or settings.</summary>
+    public string? Page { get; set; }
 
     /// <summary>Closing the window keeps VoxForge running in the notification area.</summary>
     public bool CloseToTray { get; set; } = true;

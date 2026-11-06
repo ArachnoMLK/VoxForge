@@ -44,9 +44,12 @@ public static class SoundBoardLibrary
         MigrateLegacySounds();
         var boards = new List<SoundBoardPage>();
 
-        var builtIn = new SoundBoardPage("Intégrés", null);
-        foreach (var clip in BuiltInSounds.All()) builtIn.Clips.Add(clip);
-        boards.Add(builtIn);
+        foreach (var pack in SoundPacks.All())
+        {
+            var builtIn = new SoundBoardPage(pack.Name, null);
+            foreach (var clip in pack.Clips) builtIn.Clips.Add(clip);
+            boards.Add(builtIn);
+        }
 
         Directory.CreateDirectory(Root);
         foreach (var folder in Directory.EnumerateDirectories(Root).OrderBy(f => f, StringComparer.CurrentCultureIgnoreCase))
@@ -89,6 +92,17 @@ public static class SoundBoardLibrary
     /// <summary>Copies a sound file into the board and returns its pad. Throws if the file cannot be decoded.</summary>
     public static SoundClip AddFile(SoundBoardPage board, string source, int sampleRate)
     {
+        var clip = ImportFile(board, source, sampleRate);
+        board.Clips.Add(clip);
+        return clip;
+    }
+
+    /// <summary>
+    /// Copies and decodes a sound into the board folder without touching <see cref="SoundBoardPage.Clips"/>,
+    /// so it can run off the UI thread; the caller adds the returned pad.
+    /// </summary>
+    public static SoundClip ImportFile(SoundBoardPage board, string source, int sampleRate)
+    {
         if (board.IsBuiltIn) throw new InvalidOperationException("Built-in board is read-only.");
         string target = UniqueFile(Path.Combine(board.Folder!, Path.GetFileName(source)));
         File.Copy(source, target);
@@ -96,7 +110,6 @@ public static class SoundBoardLibrary
         {
             var clip = SoundClip.FromFile(target);
             clip.GetSamples(sampleRate); // validates the file before it gets a pad
-            board.Clips.Add(clip);
             return clip;
         }
         catch

@@ -180,25 +180,18 @@ public static class HotkeyCapture
             Foreground = (Brush)owner.FindResource("MutedBrush"),
             FontSize = 12,
         };
-        var panel = new StackPanel { Margin = new Thickness(22) };
-        panel.Children.Add(new TextBlock { Text = $"Raccourci pour « {targetLabel} »", FontWeight = FontWeights.SemiBold, FontSize = 14, TextWrapping = TextWrapping.Wrap });
-        panel.Children.Add(preview);
+        var panel = new StackPanel();
+        panel.Children.Add(new TextBlock { Text = $"Pour « {targetLabel} »", Foreground = (Brush)owner.FindResource("MutedBrush"), TextWrapping = TextWrapping.Wrap });
+        panel.Children.Add(new Border
+        {
+            Background = (Brush)owner.FindResource("Panel2Brush"),
+            CornerRadius = new CornerRadius(10),
+            Margin = new Thickness(0, 12, 0, 14),
+            Child = preview,
+        });
         panel.Children.Add(hint);
 
-        var dialog = new Window
-        {
-            Title = "Raccourci clavier",
-            Owner = owner,
-            Content = panel,
-            Width = 420,
-            SizeToContent = SizeToContent.Height,
-            ResizeMode = ResizeMode.NoResize,
-            WindowStartupLocation = WindowStartupLocation.CenterOwner,
-            ShowInTaskbar = false,
-            Background = (Brush)owner.FindResource("PanelBrush"),
-            Foreground = (Brush)owner.FindResource("TextBrush"),
-            FontFamily = owner.FontFamily,
-        };
+        var dialog = DialogShell.Create(owner, "Raccourci clavier", panel, 400);
 
         dialog.PreviewKeyDown += (_, e) =>
         {

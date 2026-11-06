@@ -1,10 +1,14 @@
 <Window x:Class="VoxForge.MainWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="VoxForge" Width="1340" Height="900" MinWidth="1040" MinHeight="680"
+        xmlns:local="clr-namespace:VoxForge"
+        Title="VoxForge" Width="1280" Height="840" MinWidth="1000" MinHeight="640"
         Background="{StaticResource BgBrush}" Foreground="{StaticResource TextBrush}"
         FontFamily="Segoe UI" FontSize="13" WindowStartupLocation="CenterScreen"
-        Closing="OnClosing">
+        Closing="OnClosing" StateChanged="OnWindowStateChanged">
+    <WindowChrome.WindowChrome>
+        <WindowChrome CaptionHeight="40" ResizeBorderThickness="6" GlassFrameThickness="0" CornerRadius="0" UseAeroCaptionButtons="False"/>
+    </WindowChrome.WindowChrome>
     <Window.Resources>
         <!-- Logo: an ember tile holding a sound wave struck like an anvil spark -->
         <DrawingImage x:Key="LogoImage">
@@ -21,23 +25,77 @@
             </DrawingImage.Drawing>
         </DrawingImage>
 
-        <!-- Board tabs -->
-        <Style x:Key="BoardTab" TargetType="ListBoxItem">
+        <!-- Soundboard pad: playing pads glow and show their progress -->
+        <Style x:Key="PadButton" TargetType="Button">
+            <Setter Property="Foreground" Value="{StaticResource TextBrush}"/>
             <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
+            <Setter Property="Width" Value="150"/>
+            <Setter Property="Height" Value="84"/>
+            <Setter Property="Margin" Value="0,0,12,12"/>
             <Setter Property="Template">
                 <Setter.Value>
-                    <ControlTemplate TargetType="ListBoxItem">
-                        <Border x:Name="Bd" Margin="0,0,8,8" CornerRadius="15" Padding="14,6"
-                                Background="{StaticResource Panel2Brush}" BorderBrush="{StaticResource LineBrush}" BorderThickness="1.5">
-                            <ContentPresenter/>
-                        </Border>
+                    <ControlTemplate TargetType="Button">
+                        <Grid x:Name="Root" RenderTransformOrigin="0.5,0.5">
+                            <Grid.RenderTransform>
+                                <ScaleTransform x:Name="Scale"/>
+                            </Grid.RenderTransform>
+                            <Border CornerRadius="12" Background="{StaticResource PanelBrush}" BorderBrush="{StaticResource LineBrush}" BorderThickness="1"/>
+                            <Border x:Name="Live" CornerRadius="12" Background="{StaticResource SelectedGradient}" BorderBrush="{StaticResource AccentBrush}"
+                                    BorderThickness="1.5" Opacity="0"/>
+                            <Border x:Name="Glow" CornerRadius="12" Background="{StaticResource HoverBrush}" Opacity="0"/>
+                            <ContentPresenter Margin="12,10"/>
+                        </Grid>
                         <ControlTemplate.Triggers>
+                            <DataTrigger Binding="{Binding IsPlaying}" Value="True">
+                                <DataTrigger.EnterActions>
+                                    <BeginStoryboard>
+                                        <Storyboard>
+                                            <DoubleAnimation Storyboard.TargetName="Live" Storyboard.TargetProperty="Opacity" To="1" Duration="0:0:0.15"/>
+                                        </Storyboard>
+                                    </BeginStoryboard>
+                                </DataTrigger.EnterActions>
+                                <DataTrigger.ExitActions>
+                                    <BeginStoryboard>
+                                        <Storyboard>
+                                            <DoubleAnimation Storyboard.TargetName="Live" Storyboard.TargetProperty="Opacity" To="0" Duration="0:0:0.4"/>
+                                        </Storyboard>
+                                    </BeginStoryboard>
+                                </DataTrigger.ExitActions>
+                            </DataTrigger>
                             <Trigger Property="IsMouseOver" Value="True">
-                                <Setter TargetName="Bd" Property="BorderBrush" Value="#7A4A2A"/>
+                                <Trigger.EnterActions>
+                                    <BeginStoryboard>
+                                        <Storyboard>
+                                            <DoubleAnimation Storyboard.TargetName="Glow" Storyboard.TargetProperty="Opacity" To="1" Duration="0:0:0.15"/>
+                                        </Storyboard>
+                                    </BeginStoryboard>
+                                </Trigger.EnterActions>
+                                <Trigger.ExitActions>
+                                    <BeginStoryboard>
+                                        <Storyboard>
+                                            <DoubleAnimation Storyboard.TargetName="Glow" Storyboard.TargetProperty="Opacity" To="0" Duration="0:0:0.3"/>
+                                        </Storyboard>
+                                    </BeginStoryboard>
+                                </Trigger.ExitActions>
                             </Trigger>
-                            <Trigger Property="IsSelected" Value="True">
-                                <Setter TargetName="Bd" Property="BorderBrush" Value="{StaticResource AccentBrush}"/>
-                                <Setter TargetName="Bd" Property="Background" Value="#2E2420"/>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Trigger.EnterActions>
+                                    <BeginStoryboard>
+                                        <Storyboard>
+                                            <DoubleAnimation Storyboard.TargetName="Scale" Storyboard.TargetProperty="ScaleX" To="0.95" Duration="0:0:0.06"/>
+                                            <DoubleAnimation Storyboard.TargetName="Scale" Storyboard.TargetProperty="ScaleY" To="0.95" Duration="0:0:0.06"/>
+                                        </Storyboard>
+                                    </BeginStoryboard>
+                                </Trigger.EnterActions>
+                                <Trigger.ExitActions>
+                                    <BeginStoryboard>
+                                        <Storyboard>
+                                            <DoubleAnimation Storyboard.TargetName="Scale" Storyboard.TargetProperty="ScaleX" To="1" Duration="0:0:0.22" EasingFunction="{StaticResource EaseOut}"/>
+                                            <DoubleAnimation Storyboard.TargetName="Scale" Storyboard.TargetProperty="ScaleY" To="1" Duration="0:0:0.22" EasingFunction="{StaticResource EaseOut}"/>
+                                        </Storyboard>
+                                    </BeginStoryboard>
+                                </Trigger.ExitActions>
                             </Trigger>
                         </ControlTemplate.Triggers>
                     </ControlTemplate>
@@ -49,213 +107,103 @@
         <StaticResource ResourceKey="LogoImage"/>
     </Window.Icon>
 
-    <Grid Margin="12">
-        <Grid.RowDefinitions>
-            <RowDefinition Height="Auto"/>
-            <RowDefinition Height="*"/>
-            <RowDefinition Height="Auto"/>
-        </Grid.RowDefinitions>
-
-        <!-- Header -->
-        <Grid Grid.Row="0" Margin="8,4,8,8">
-            <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                <Image Source="{StaticResource LogoImage}" Width="44" Height="44"/>
-                <StackPanel Margin="14,0,0,0" VerticalAlignment="Center">
-                    <TextBlock Text="VoxForge" FontSize="24" FontWeight="Bold"/>
-                    <TextBlock Text="Forge ta voix en temps réel" Foreground="{StaticResource MutedBrush}"/>
-                </StackPanel>
-            </StackPanel>
-            <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
-                <Border CornerRadius="12" Background="{StaticResource PanelBrush}" Padding="12,6" Margin="0,0,14,0" VerticalAlignment="Center">
-                    <StackPanel Orientation="Horizontal">
-                        <Ellipse x:Name="StatusDot" Width="9" Height="9" Fill="{StaticResource MutedBrush}" VerticalAlignment="Center"/>
-                        <TextBlock x:Name="StatusText" Text="À l'arrêt" Margin="8,0,0,0" VerticalAlignment="Center" MaxWidth="460" TextTrimming="CharacterEllipsis"/>
-                    </StackPanel>
-                </Border>
-                <Button x:Name="StartButton" Style="{StaticResource PrimaryButton}" Content="▶  Démarrer" Click="OnStartStop" MinWidth="150"/>
-            </StackPanel>
-        </Grid>
-
-        <!-- Body -->
-        <Grid Grid.Row="1">
+    <Border x:Name="RootFrame">
+        <Grid>
+            <Grid.RowDefinitions>
+                <RowDefinition Height="40"/>
+                <RowDefinition Height="*"/>
+            </Grid.RowDefinitions>
             <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="320"/>
+                <ColumnDefinition Width="248"/>
                 <ColumnDefinition Width="*"/>
             </Grid.ColumnDefinitions>
 
-            <!-- Devices and levels -->
-            <Border Grid.Column="0" Style="{StaticResource Card}">
-                <ScrollViewer VerticalScrollBarVisibility="Auto">
+            <!-- Sidebar background spans the title row too -->
+            <Border Grid.RowSpan="2" Background="{StaticResource SideBrush}"/>
+
+            <!-- Title bar -->
+            <StackPanel Grid.Row="0" Grid.Column="0" Orientation="Horizontal" Margin="18,0,0,0" VerticalAlignment="Center">
+                <Image Source="{StaticResource LogoImage}" Width="22" Height="22"/>
+                <TextBlock Text="VoxForge" FontWeight="Bold" FontSize="14" Margin="10,0,0,0" VerticalAlignment="Center"/>
+                <TextBlock x:Name="VersionText" Foreground="{StaticResource MutedBrush}" FontSize="11" Margin="8,1,0,0" VerticalAlignment="Center"/>
+            </StackPanel>
+            <StackPanel Grid.Row="0" Grid.Column="1" Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Top">
+                <Button Style="{StaticResource CaptionButton}" Content="&#xE921;" Click="OnMinimize" WindowChrome.IsHitTestVisibleInChrome="True" ToolTip="Réduire"/>
+                <Button x:Name="MaxButton" Style="{StaticResource CaptionButton}" Content="&#xE922;" Click="OnMaximize" WindowChrome.IsHitTestVisibleInChrome="True" ToolTip="Agrandir"/>
+                <Button Style="{StaticResource CloseButton}" Content="&#xE8BB;" Click="OnCloseClick" WindowChrome.IsHitTestVisibleInChrome="True" ToolTip="Fermer"/>
+            </StackPanel>
+
+            <!-- Sidebar -->
+            <DockPanel Grid.Row="1" Grid.Column="0" Margin="14,10,14,16" LastChildFill="False">
+                <StackPanel DockPanel.Dock="Top">
+                    <RadioButton x:Name="NavVoices" Style="{StaticResource NavButton}" Tag="&#xE720;" Content="Voix" IsChecked="True" Checked="OnNavigate"/>
+                    <RadioButton x:Name="NavEffects" Style="{StaticResource NavButton}" Tag="&#xE9E9;" Content="Effets" Checked="OnNavigate"/>
+                    <RadioButton x:Name="NavSounds" Style="{StaticResource NavButton}" Tag="&#xE8D6;" Content="Soundboards" Checked="OnNavigate"/>
+                    <RadioButton x:Name="NavSettings" Style="{StaticResource NavButton}" Tag="&#xE713;" Content="Réglages" Checked="OnNavigate"/>
+                </StackPanel>
+
+                <!-- Live panel -->
+                <Border DockPanel.Dock="Bottom" CornerRadius="14" Background="{StaticResource PanelBrush}" Padding="16">
                     <StackPanel>
-                        <Grid>
-                            <TextBlock Text="Appareils" Style="{StaticResource SectionTitle}"/>
-                            <Button Content="⟳ Actualiser" HorizontalAlignment="Right" VerticalAlignment="Top" Padding="10,4" FontSize="12" Click="OnRefreshDevices"/>
+                        <TextBlock Text="VOIX ACTUELLE" Foreground="{StaticResource MutedBrush}" FontSize="10.5" FontWeight="SemiBold"/>
+                        <TextBlock x:Name="CurrentVoiceText" FontSize="17" FontWeight="Bold" Margin="0,3,0,0" TextTrimming="CharacterEllipsis"
+                                   Text="{Binding SelectedItem.Name, ElementName=PresetList, FallbackValue='Réglage perso', TargetNullValue='Réglage perso'}"/>
+
+                        <CheckBox x:Name="EffectsCheck" Content="Effets activés" Margin="0,14,0,0" IsChecked="True"
+                                  Checked="OnEffectsMasterChanged" Unchecked="OnEffectsMasterChanged"/>
+                        <CheckBox x:Name="MuteCheck" Content="Couper le micro" Margin="0,10,0,0" Checked="OnMuteChanged" Unchecked="OnMuteChanged"/>
+
+                        <Grid Margin="0,16,0,5">
+                            <TextBlock Text="Micro" Foreground="{StaticResource MutedBrush}" FontSize="11"/>
                         </Grid>
-
-                        <TextBlock Text="Microphone" Style="{StaticResource Label}"/>
-                        <ComboBox x:Name="MicCombo" SelectionChanged="OnDeviceChanged"/>
-
-                        <TextBlock Text="Sortie vers Discord / jeux / OBS (câble virtuel)" Style="{StaticResource Label}"/>
-                        <ComboBox x:Name="OutputCombo" SelectionChanged="OnDeviceChanged"/>
-                        <TextBlock x:Name="CableHint" Style="{StaticResource Hint}"/>
-
-                        <CheckBox x:Name="MonitorCheck" Content="M'écouter dans le casque" Margin="0,18,0,0"
-                                  Checked="OnDeviceChanged" Unchecked="OnDeviceChanged"/>
-                        <ComboBox x:Name="MonitorCombo" Margin="0,8,0,0" SelectionChanged="OnDeviceChanged"/>
-                        <TextBlock Style="{StaticResource Hint}" Text="Utilise un casque : avec des haut-parleurs, le micro réentend sa propre voix et ça siffle."/>
-
-                        <TextBlock Text="Niveaux" Style="{StaticResource SectionTitle}" Margin="0,24,0,4"/>
-                        <TextBlock Text="Entrée (micro)" Style="{StaticResource Label}"/>
                         <ProgressBar x:Name="InputMeter"/>
-                        <TextBlock Text="Sortie (voix forgée)" Style="{StaticResource Label}"/>
+                        <TextBlock Text="Voix forgée" Foreground="{StaticResource MutedBrush}" FontSize="11" Margin="0,10,0,5"/>
                         <ProgressBar x:Name="OutputMeter"/>
 
-                        <Grid Margin="0,14,0,0">
-                            <TextBlock Text="Gain du micro" Style="{StaticResource Label}" Margin="0"/>
-                            <TextBlock HorizontalAlignment="Right" Foreground="{StaticResource MutedBrush}" FontSize="12"
-                                       Text="{Binding Value, ElementName=GainSlider, StringFormat={}{0:P0}}"/>
-                        </Grid>
-                        <Slider x:Name="GainSlider" Minimum="0" Maximum="3" Value="1" Margin="0,4,0,0" ValueChanged="OnGainChanged"/>
-                        <CheckBox x:Name="MuteCheck" Content="Couper le micro" Margin="0,12,0,0" Checked="OnMuteChanged" Unchecked="OnMuteChanged"/>
-
-                        <TextBlock Text="Raccourcis" Style="{StaticResource SectionTitle}" Margin="0,24,0,4"/>
-                        <TextBlock Style="{StaticResource Hint}" Margin="0,0,0,8"
-                                   Text="Ils marchent partout, même en jeu. Clic droit sur une voix ou un son pour lui donner un raccourci."/>
-                        <ItemsControl x:Name="ActionHotkeys">
-                            <ItemsControl.ItemTemplate>
-                                <DataTemplate>
-                                    <Grid Margin="0,0,0,6">
-                                        <Grid.ColumnDefinitions>
-                                            <ColumnDefinition Width="*"/>
-                                            <ColumnDefinition Width="Auto"/>
-                                        </Grid.ColumnDefinitions>
-                                        <TextBlock Text="{Binding Label}" VerticalAlignment="Center" TextWrapping="Wrap" FontSize="12.5"/>
-                                        <Button Grid.Column="1" Content="{Binding ButtonText}" MinWidth="104" Padding="8,4" FontSize="12"
-                                                Margin="8,0,0,0" Click="OnEditActionHotkey" ToolTip="Clique pour changer"/>
-                                    </Grid>
-                                </DataTemplate>
-                            </ItemsControl.ItemTemplate>
-                        </ItemsControl>
-
-                        <TextBlock Text="Fenêtre" Style="{StaticResource SectionTitle}" Margin="0,24,0,8"/>
-                        <CheckBox x:Name="TrayCheck" Content="Fermer = rester en arrière-plan" Checked="OnTrayOptionChanged" Unchecked="OnTrayOptionChanged"/>
-                        <TextBlock Style="{StaticResource Hint}"
-                                   Text="La croix cache VoxForge dans la zone de notification (flèche en bas à droite) : ta voix continue. Clic droit sur l'icône pour quitter."/>
+                        <Button x:Name="StartButton" Style="{StaticResource PrimaryButton}" Margin="0,18,0,0" Click="OnStartStop" HorizontalAlignment="Stretch">
+                            <StackPanel Orientation="Horizontal">
+                                <TextBlock x:Name="StartIcon" Style="{StaticResource Icon}" Text="&#xE768;" FontSize="13"/>
+                                <TextBlock x:Name="StartLabel" Text="Démarrer" Margin="10,0,0,0"/>
+                            </StackPanel>
+                        </Button>
                     </StackPanel>
-                </ScrollViewer>
-            </Border>
+                </Border>
+            </DockPanel>
 
-            <Grid Grid.Column="1">
+            <!-- Content -->
+            <Grid Grid.Row="1" Grid.Column="1" Margin="34,4,26,0">
                 <Grid.RowDefinitions>
-                    <RowDefinition Height="*"/>
                     <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="*"/>
                 </Grid.RowDefinitions>
 
-                <!-- Voices and effects -->
-                <Border Grid.Row="0" Style="{StaticResource Card}">
-                    <ScrollViewer VerticalScrollBarVisibility="Auto">
-                        <StackPanel>
-                            <Grid>
-                                <TextBlock Text="Voix" Style="{StaticResource SectionTitle}"/>
-                                <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Top">
-                                    <Button Content="Tout désactiver" Padding="10,4" FontSize="12" Margin="0,0,16,0" Click="OnClearEffects"/>
-                                    <CheckBox x:Name="EffectsCheck" Content="Effets activés" VerticalAlignment="Center"
-                                              IsChecked="True" Checked="OnEffectsMasterChanged" Unchecked="OnEffectsMasterChanged"/>
-                                </StackPanel>
-                            </Grid>
-                            <ListBox x:Name="PresetList" Background="Transparent" BorderThickness="0"
-                                     ItemContainerStyle="{StaticResource PresetItem}" SelectionChanged="OnPresetChanged"
-                                     ScrollViewer.HorizontalScrollBarVisibility="Disabled">
-                                <ListBox.ItemsPanel>
-                                    <ItemsPanelTemplate>
-                                        <WrapPanel/>
-                                    </ItemsPanelTemplate>
-                                </ListBox.ItemsPanel>
-                                <ListBox.ItemTemplate>
-                                    <DataTemplate>
-                                        <StackPanel Background="Transparent">
-                                            <StackPanel.ContextMenu>
-                                                <ContextMenu>
-                                                    <MenuItem Header="Assigner un raccourci…" Click="OnEditVoiceHotkey"/>
-                                                    <MenuItem Header="Retirer le raccourci" Click="OnClearVoiceHotkey"/>
-                                                </ContextMenu>
-                                            </StackPanel.ContextMenu>
-                                            <Grid>
-                                                <TextBlock Text="{Binding Category}" Foreground="{StaticResource AccentBrush}" FontSize="10.5" FontWeight="SemiBold"/>
-                                                <TextBlock Text="{Binding HotkeyText}" Foreground="{StaticResource MutedBrush}" FontSize="10" HorizontalAlignment="Right"/>
-                                            </Grid>
-                                            <TextBlock Text="{Binding Name}" FontWeight="SemiBold" FontSize="14" Foreground="{StaticResource TextBrush}" Margin="0,1,0,0"/>
-                                            <TextBlock Text="{Binding Description}" Foreground="{StaticResource MutedBrush}" FontSize="11"
-                                                       TextTrimming="CharacterEllipsis" Margin="0,2,0,0"/>
-                                        </StackPanel>
-                                    </DataTemplate>
-                                </ListBox.ItemTemplate>
-                            </ListBox>
-
-                            <TextBlock Text="Effets" Style="{StaticResource SectionTitle}" Margin="0,14,0,4"/>
-                            <TextBlock Style="{StaticResource Hint}" Margin="0,0,0,12"
-                                       Text="Une voix règle ces effets pour toi. Tu peux ensuite tout ajuster, et combiner autant d'effets que tu veux."/>
-                            <ItemsControl x:Name="EffectList">
-                                <ItemsControl.ItemsPanel>
-                                    <ItemsPanelTemplate>
-                                        <WrapPanel/>
-                                    </ItemsPanelTemplate>
-                                </ItemsControl.ItemsPanel>
-                                <ItemsControl.ItemTemplate>
-                                    <DataTemplate>
-                                        <Border x:Name="Bd" Width="250" Margin="0,0,10,10" CornerRadius="10" Padding="14,12"
-                                                Background="{StaticResource Panel2Brush}" BorderBrush="{StaticResource LineBrush}" BorderThickness="1.5">
-                                            <StackPanel>
-                                                <CheckBox Content="{Binding Name}" IsChecked="{Binding Enabled}" FontWeight="SemiBold" FontSize="14"/>
-                                                <TextBlock Text="{Binding Description}" Style="{StaticResource Hint}"/>
-                                                <ItemsControl x:Name="Knobs" ItemsSource="{Binding Params}" Opacity="0.45" Margin="0,2,0,0">
-                                                    <ItemsControl.ItemTemplate>
-                                                        <DataTemplate>
-                                                            <StackPanel>
-                                                                <Grid>
-                                                                    <TextBlock Text="{Binding Label}" Style="{StaticResource Label}"/>
-                                                                    <TextBlock Text="{Binding Display}" HorizontalAlignment="Right" Style="{StaticResource Label}"/>
-                                                                </Grid>
-                                                                <Slider Minimum="{Binding Min}" Maximum="{Binding Max}" Value="{Binding Value}"
-                                                                        TickFrequency="{Binding Step}" IsSnapToTickEnabled="{Binding Snaps}"/>
-                                                            </StackPanel>
-                                                        </DataTemplate>
-                                                    </ItemsControl.ItemTemplate>
-                                                </ItemsControl>
-                                            </StackPanel>
-                                        </Border>
-                                        <DataTemplate.Triggers>
-                                            <DataTrigger Binding="{Binding Enabled}" Value="True">
-                                                <Setter TargetName="Bd" Property="BorderBrush" Value="{StaticResource AccentBrush}"/>
-                                                <Setter TargetName="Knobs" Property="Opacity" Value="1"/>
-                                            </DataTrigger>
-                                        </DataTemplate.Triggers>
-                                    </DataTemplate>
-                                </ItemsControl.ItemTemplate>
-                            </ItemsControl>
-                        </StackPanel>
-                    </ScrollViewer>
-                </Border>
-
-                <!-- Soundboards -->
-                <Border Grid.Row="1" Style="{StaticResource Card}" AllowDrop="True" Drop="OnDropSounds" DragOver="OnDragOverSounds">
+                <Grid Grid.Row="0" Margin="0,0,8,18">
                     <StackPanel>
-                        <Grid>
-                            <TextBlock Text="Soundboards" Style="{StaticResource SectionTitle}"/>
-                            <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Top">
-                                <TextBlock Text="Volume" Foreground="{StaticResource MutedBrush}" VerticalAlignment="Center" Margin="0,0,8,0"/>
-                                <Slider x:Name="SoundVolume" Width="120" Minimum="0" Maximum="1.5" Value="0.8" VerticalAlignment="Center" ValueChanged="OnSoundVolumeChanged"/>
-                                <Button Content="■ Tout arrêter" Margin="14,0,0,0" Padding="12,6" Click="OnStopSounds"/>
-                            </StackPanel>
-                        </Grid>
+                        <TextBlock x:Name="PageTitle" Text="Voix" Style="{StaticResource PageTitle}"/>
+                        <TextBlock x:Name="PageSubtitle" Foreground="{StaticResource MutedBrush}" Margin="0,4,0,0"/>
+                    </StackPanel>
+                    <Border x:Name="StatusPill" CornerRadius="15" Background="{StaticResource PanelBrush}" Padding="14,7"
+                            HorizontalAlignment="Right" VerticalAlignment="Center">
+                        <StackPanel Orientation="Horizontal">
+                            <Grid Width="10" Height="10" VerticalAlignment="Center">
+                                <Ellipse x:Name="StatusPulse" Fill="{StaticResource OkBrush}" Opacity="0" RenderTransformOrigin="0.5,0.5">
+                                    <Ellipse.RenderTransform>
+                                        <ScaleTransform x:Name="PulseScale"/>
+                                    </Ellipse.RenderTransform>
+                                </Ellipse>
+                                <Ellipse x:Name="StatusDot" Fill="{StaticResource MutedBrush}"/>
+                            </Grid>
+                            <TextBlock x:Name="StatusText" Text="À l'arrêt" Margin="9,0,0,0" VerticalAlignment="Center" MaxWidth="440" TextTrimming="CharacterEllipsis"/>
+                        </StackPanel>
+                    </Border>
+                </Grid>
 
+                <!-- Page: voices -->
+                <ScrollViewer x:Name="PageVoices" Grid.Row="1" VerticalScrollBarVisibility="Auto" local:SmoothScroll.IsEnabled="True">
+                    <StackPanel Margin="0,0,8,24">
                         <Grid>
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="*"/>
-                                <ColumnDefinition Width="Auto"/>
-                            </Grid.ColumnDefinitions>
-                            <ListBox x:Name="BoardList" Background="Transparent" BorderThickness="0" Foreground="{StaticResource TextBrush}" ItemContainerStyle="{StaticResource BoardTab}"
-                                     ScrollViewer.HorizontalScrollBarVisibility="Disabled" SelectionChanged="OnBoardChanged">
+                            <ListBox x:Name="CategoryList" Style="{StaticResource BareList}" ItemContainerStyle="{StaticResource ChipItem}"
+                                     SelectionChanged="OnCategoryChanged" Margin="0,0,200,0">
                                 <ListBox.ItemsPanel>
                                     <ItemsPanelTemplate>
                                         <WrapPanel/>
@@ -265,20 +213,234 @@
                                     <DataTemplate>
                                         <StackPanel Orientation="Horizontal">
                                             <TextBlock Text="{Binding Name}" FontWeight="SemiBold"/>
-                                            <TextBlock Text="{Binding Clips.Count, StringFormat={} · {0}}" Foreground="{StaticResource MutedBrush}"/>
+                                            <TextBlock Text="{Binding Count}" Margin="7,0,0,0" Opacity="0.65"/>
                                         </StackPanel>
                                     </DataTemplate>
                                 </ListBox.ItemTemplate>
                             </ListBox>
-                            <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Top">
-                                <Button Content="＋ Nouvelle soundboard" Padding="10,5" Click="OnNewBoard"/>
-                                <Button Content="Importer un dossier" Padding="10,5" Margin="8,0,0,0" Click="OnImportFolder"/>
-                                <Button x:Name="RenameBoardButton" Content="Renommer" Padding="10,5" Margin="8,0,0,0" Click="OnRenameBoard"/>
-                                <Button x:Name="DeleteBoardButton" Content="Supprimer" Padding="10,5" Margin="8,0,0,0" Click="OnDeleteBoard"/>
+                            <Button Content="Voix naturelle" HorizontalAlignment="Right" VerticalAlignment="Top" Padding="14,7" Click="OnClearEffects"
+                                    ToolTip="Coupe tous les effets"/>
+                        </Grid>
+
+                        <ListBox x:Name="PresetList" Style="{StaticResource BareList}" ItemContainerStyle="{StaticResource PresetItem}"
+                                 SelectionChanged="OnPresetChanged" Margin="0,4,0,0">
+                            <ListBox.GroupStyle>
+                                <GroupStyle>
+                                    <GroupStyle.HeaderTemplate>
+                                        <DataTemplate>
+                                            <StackPanel Orientation="Horizontal" Margin="2,16,0,12">
+                                                <TextBlock Text="{Binding Name}" FontSize="16" FontWeight="SemiBold"/>
+                                                <Border CornerRadius="9" Background="{StaticResource Panel2Brush}" Padding="8,1" Margin="10,0,0,0" VerticalAlignment="Center">
+                                                    <TextBlock Text="{Binding ItemCount}" Foreground="{StaticResource MutedBrush}" FontSize="11.5"/>
+                                                </Border>
+                                            </StackPanel>
+                                        </DataTemplate>
+                                    </GroupStyle.HeaderTemplate>
+                                    <GroupStyle.Panel>
+                                        <ItemsPanelTemplate>
+                                            <StackPanel/>
+                                        </ItemsPanelTemplate>
+                                    </GroupStyle.Panel>
+                                </GroupStyle>
+                            </ListBox.GroupStyle>
+                            <ListBox.ItemsPanel>
+                                <ItemsPanelTemplate>
+                                    <WrapPanel/>
+                                </ItemsPanelTemplate>
+                            </ListBox.ItemsPanel>
+                            <ListBox.ItemTemplate>
+                                <DataTemplate>
+                                    <Grid Background="Transparent">
+                                        <Grid.ContextMenu>
+                                            <ContextMenu>
+                                                <MenuItem Header="Assigner un raccourci…" Click="OnEditVoiceHotkey"/>
+                                                <MenuItem Header="Retirer le raccourci" Click="OnClearVoiceHotkey"/>
+                                            </ContextMenu>
+                                        </Grid.ContextMenu>
+                                        <StackPanel>
+                                            <TextBlock Text="{Binding Name}" FontWeight="SemiBold" FontSize="15" Foreground="{StaticResource TextBrush}"/>
+                                            <TextBlock Text="{Binding Description}" Foreground="{StaticResource MutedBrush}" FontSize="11.5"
+                                                       TextWrapping="Wrap" TextTrimming="CharacterEllipsis" MaxHeight="32" Margin="0,4,0,0"/>
+                                        </StackPanel>
+                                        <TextBlock Text="{Binding HotkeyText}" Foreground="{StaticResource AccentBrush}" FontSize="10.5"
+                                                   VerticalAlignment="Bottom" HorizontalAlignment="Left"/>
+                                    </Grid>
+                                </DataTemplate>
+                            </ListBox.ItemTemplate>
+                        </ListBox>
+                        <TextBlock Style="{StaticResource Hint}" Margin="2,8,0,0"
+                                   Text="Clic droit sur une voix pour lui donner un raccourci clavier. Affine ensuite le rendu dans Effets."/>
+                    </StackPanel>
+                </ScrollViewer>
+
+                <!-- Page: effects -->
+                <ScrollViewer x:Name="PageEffects" Grid.Row="1" VerticalScrollBarVisibility="Auto" Visibility="Collapsed" local:SmoothScroll.IsEnabled="True">
+                    <StackPanel Margin="0,0,8,24">
+                        <Grid Margin="0,0,0,14">
+                            <TextBlock Style="{StaticResource Hint}" Margin="0,0,220,0" VerticalAlignment="Center"
+                                       Text="Une voix règle ces effets pour toi. Ajuste-les ou combine-en autant que tu veux : ça s'entend tout de suite."/>
+                            <Button Content="Tout désactiver" HorizontalAlignment="Right" Padding="14,7" Click="OnClearEffects"/>
+                        </Grid>
+                        <ItemsControl x:Name="EffectList">
+                            <ItemsControl.ItemsPanel>
+                                <ItemsPanelTemplate>
+                                    <WrapPanel/>
+                                </ItemsPanelTemplate>
+                            </ItemsControl.ItemsPanel>
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <Grid Width="270" Margin="0,0,14,14">
+                                        <Border CornerRadius="14" Background="{StaticResource PanelBrush}" BorderBrush="{StaticResource LineBrush}" BorderThickness="1"/>
+                                        <Border x:Name="On" CornerRadius="14" Background="{StaticResource SelectedGradient}" BorderBrush="{StaticResource AccentBrush}"
+                                                BorderThickness="1.5" Opacity="0"/>
+                                        <StackPanel Margin="18,16">
+                                            <Grid>
+                                                <TextBlock Text="{Binding Name}" FontWeight="SemiBold" FontSize="15" VerticalAlignment="Center"/>
+                                                <CheckBox IsChecked="{Binding Enabled}" HorizontalAlignment="Right"/>
+                                            </Grid>
+                                            <TextBlock Text="{Binding Description}" Style="{StaticResource Hint}"/>
+                                            <ItemsControl x:Name="Knobs" ItemsSource="{Binding Params}" Opacity="0.4" Margin="0,4,0,0">
+                                                <ItemsControl.ItemTemplate>
+                                                    <DataTemplate>
+                                                        <StackPanel>
+                                                            <Grid>
+                                                                <TextBlock Text="{Binding Label}" Style="{StaticResource Label}"/>
+                                                                <TextBlock Text="{Binding Display}" HorizontalAlignment="Right" Style="{StaticResource Label}" Foreground="{StaticResource TextBrush}"/>
+                                                            </Grid>
+                                                            <Slider Minimum="{Binding Min}" Maximum="{Binding Max}" Value="{Binding Value}"
+                                                                    TickFrequency="{Binding Step}" IsSnapToTickEnabled="{Binding Snaps}"/>
+                                                        </StackPanel>
+                                                    </DataTemplate>
+                                                </ItemsControl.ItemTemplate>
+                                            </ItemsControl>
+                                        </StackPanel>
+                                    </Grid>
+                                    <DataTemplate.Triggers>
+                                        <DataTrigger Binding="{Binding Enabled}" Value="True">
+                                            <DataTrigger.EnterActions>
+                                                <BeginStoryboard>
+                                                    <Storyboard>
+                                                        <DoubleAnimation Storyboard.TargetName="On" Storyboard.TargetProperty="Opacity" To="1" Duration="0:0:0.25"/>
+                                                        <DoubleAnimation Storyboard.TargetName="Knobs" Storyboard.TargetProperty="Opacity" To="1" Duration="0:0:0.25"/>
+                                                    </Storyboard>
+                                                </BeginStoryboard>
+                                            </DataTrigger.EnterActions>
+                                            <DataTrigger.ExitActions>
+                                                <BeginStoryboard>
+                                                    <Storyboard>
+                                                        <DoubleAnimation Storyboard.TargetName="On" Storyboard.TargetProperty="Opacity" To="0" Duration="0:0:0.25"/>
+                                                        <DoubleAnimation Storyboard.TargetName="Knobs" Storyboard.TargetProperty="Opacity" To="0.4" Duration="0:0:0.25"/>
+                                                    </Storyboard>
+                                                </BeginStoryboard>
+                                            </DataTrigger.ExitActions>
+                                        </DataTrigger>
+                                    </DataTemplate.Triggers>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </StackPanel>
+                </ScrollViewer>
+
+                <!-- Page: soundboards -->
+                <Grid x:Name="PageSounds" Grid.Row="1" Visibility="Collapsed" Margin="0,0,8,20" AllowDrop="True"
+                      Drop="OnDropSounds" DragOver="OnDragOverSounds" Background="Transparent">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="230"/>
+                        <ColumnDefinition Width="*"/>
+                    </Grid.ColumnDefinitions>
+
+                    <!-- Board list -->
+                    <Border Style="{StaticResource Card}" Margin="0,0,16,0" Padding="12,14">
+                        <DockPanel>
+                            <TextBlock DockPanel.Dock="Top" Text="Mes soundboards" Style="{StaticResource SectionTitle}" Margin="6,0,0,10"/>
+                            <StackPanel DockPanel.Dock="Bottom" Margin="0,10,0,0">
+                                <Button HorizontalContentAlignment="Left" Click="OnNewBoard">
+                                    <StackPanel Orientation="Horizontal">
+                                        <TextBlock Style="{StaticResource Icon}" Text="&#xE710;" FontSize="12"/>
+                                        <TextBlock Text="Nouvelle soundboard" Margin="10,0,0,0"/>
+                                    </StackPanel>
+                                </Button>
+                                <Button HorizontalContentAlignment="Left" Margin="0,8,0,0" Click="OnImportFolder">
+                                    <StackPanel Orientation="Horizontal">
+                                        <TextBlock Style="{StaticResource Icon}" Text="&#xE8B7;" FontSize="12"/>
+                                        <TextBlock Text="Importer un dossier" Margin="10,0,0,0"/>
+                                    </StackPanel>
+                                </Button>
+                            </StackPanel>
+                            <ScrollViewer VerticalScrollBarVisibility="Auto" local:SmoothScroll.IsEnabled="True">
+                                <ListBox x:Name="BoardList" Style="{StaticResource BareList}" ItemContainerStyle="{StaticResource RowItem}"
+                                         SelectionChanged="OnBoardChanged">
+                                    <ListBox.ItemTemplate>
+                                        <DataTemplate>
+                                            <Grid>
+                                                <TextBlock Text="{Binding Name}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" Margin="0,0,28,0"/>
+                                                <TextBlock Text="{Binding Clips.Count}" HorizontalAlignment="Right" Foreground="{StaticResource MutedBrush}"/>
+                                            </Grid>
+                                        </DataTemplate>
+                                    </ListBox.ItemTemplate>
+                                </ListBox>
+                            </ScrollViewer>
+                        </DockPanel>
+                    </Border>
+
+                    <!-- Pads -->
+                    <DockPanel Grid.Column="1">
+                        <Grid DockPanel.Dock="Top" Margin="0,0,0,12">
+                            <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                <TextBlock Text="{Binding SelectedItem.Name, ElementName=BoardList}" FontSize="19" FontWeight="SemiBold" VerticalAlignment="Center"/>
+                                <Button x:Name="RenameBoardButton" Style="{StaticResource GhostButton}" Margin="10,0,0,0" Click="OnRenameBoard" ToolTip="Renommer">
+                                    <TextBlock Style="{StaticResource Icon}" Text="&#xE70F;" FontSize="13"/>
+                                </Button>
+                                <Button x:Name="DeleteBoardButton" Style="{StaticResource GhostButton}" Click="OnDeleteBoard" ToolTip="Supprimer la soundboard">
+                                    <TextBlock Style="{StaticResource Icon}" Text="&#xE74D;" FontSize="13"/>
+                                </Button>
+                            </StackPanel>
+                            <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
+                                <TextBlock Style="{StaticResource Icon}" Text="&#xE767;" Foreground="{StaticResource MutedBrush}" Margin="0,0,10,0"/>
+                                <Slider x:Name="SoundVolume" Width="110" Minimum="0" Maximum="1.5" Value="0.8" VerticalAlignment="Center" ValueChanged="OnSoundVolumeChanged"
+                                        ToolTip="Volume des sons"/>
+                                <Button Margin="14,0,0,0" Padding="12,7" Click="OnStopSounds" ToolTip="Arrêter tous les sons">
+                                    <StackPanel Orientation="Horizontal">
+                                        <TextBlock Style="{StaticResource Icon}" Text="&#xE71A;" FontSize="12"/>
+                                        <TextBlock Text="Stop" Margin="8,0,0,0"/>
+                                    </StackPanel>
+                                </Button>
                             </StackPanel>
                         </Grid>
 
-                        <ScrollViewer Height="140" Margin="0,6,0,0" VerticalScrollBarVisibility="Auto">
+                        <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Margin="0,0,0,14">
+                            <Button x:Name="AddSoundButton" Style="{StaticResource PrimaryButton}" Padding="16,8" FontSize="13" Click="OnAddSound">
+                                <StackPanel Orientation="Horizontal">
+                                    <TextBlock Style="{StaticResource Icon}" Text="&#xE710;" FontSize="12"/>
+                                    <TextBlock Text="Ajouter des sons" Margin="8,0,0,0"/>
+                                </StackPanel>
+                            </Button>
+                            <Button x:Name="AddLinkButton" Margin="10,0,0,0" Padding="14,8" Click="OnAddLink">
+                                <StackPanel Orientation="Horizontal">
+                                    <TextBlock Style="{StaticResource Icon}" Text="&#xE71B;" FontSize="12"/>
+                                    <TextBlock Text="Ajouter depuis un lien" Margin="8,0,0,0"/>
+                                </StackPanel>
+                            </Button>
+                        </StackPanel>
+
+                        <Border x:Name="DownloadPanel" DockPanel.Dock="Top" CornerRadius="12" Background="{StaticResource PanelBrush}" Padding="14,10"
+                                Margin="0,0,0,14" Visibility="Collapsed">
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                </Grid.ColumnDefinitions>
+                                <StackPanel VerticalAlignment="Center">
+                                    <TextBlock x:Name="DownloadText" Text="Téléchargement…" TextTrimming="CharacterEllipsis"/>
+                                    <ProgressBar x:Name="DownloadBar" Margin="0,8,0,0" Foreground="{StaticResource EmberGradient}"/>
+                                </StackPanel>
+                                <Button Grid.Column="1" Content="Annuler" Margin="14,0,0,0" Padding="12,6" Click="OnCancelDownload"/>
+                            </Grid>
+                        </Border>
+
+                        <TextBlock x:Name="BoardHint" DockPanel.Dock="Bottom" Style="{StaticResource Hint}" Margin="0,10,0,0"/>
+
+                        <ScrollViewer VerticalScrollBarVisibility="Auto" local:SmoothScroll.IsEnabled="True">
                             <ItemsControl x:Name="SoundPads">
                                 <ItemsControl.ItemsPanel>
                                     <ItemsPanelTemplate>
@@ -296,27 +458,130 @@
                                                     <MenuItem Header="Retirer ce son" Click="OnRemoveSound"/>
                                                 </ContextMenu>
                                             </Button.ContextMenu>
-                                            <StackPanel>
-                                                <TextBlock Text="{Binding Name}" TextWrapping="Wrap" TextTrimming="CharacterEllipsis" TextAlignment="Center" MaxWidth="100" MaxHeight="36"/>
-                                                <TextBlock Text="{Binding HotkeyText}" Foreground="{StaticResource AccentBrush}" FontSize="10" FontWeight="Normal"
-                                                           TextAlignment="Center" Margin="0,2,0,0"/>
-                                            </StackPanel>
+                                            <Grid>
+                                                <Grid.RowDefinitions>
+                                                    <RowDefinition Height="*"/>
+                                                    <RowDefinition Height="Auto"/>
+                                                </Grid.RowDefinitions>
+                                                <TextBlock Text="{Binding Name}" FontWeight="SemiBold" TextWrapping="Wrap" TextTrimming="CharacterEllipsis" MaxHeight="36"/>
+                                                <Grid Grid.Row="1">
+                                                    <TextBlock Text="{Binding HotkeyText}" Foreground="{StaticResource AccentBrush}" FontSize="10.5"/>
+                                                    <ProgressBar Height="3" Margin="0,0,0,1" VerticalAlignment="Bottom" Value="{Binding PlayProgress, Mode=OneWay}"
+                                                                 Foreground="{StaticResource EmberGradient}" Visibility="{Binding IsPlaying, Converter={StaticResource ShowIf}}"/>
+                                                </Grid>
+                                            </Grid>
                                         </Button>
                                     </DataTemplate>
                                 </ItemsControl.ItemTemplate>
                             </ItemsControl>
                         </ScrollViewer>
-                        <Grid>
-                            <TextBlock x:Name="BoardHint" Style="{StaticResource Hint}" VerticalAlignment="Center"/>
-                            <Button x:Name="AddSoundButton" Content="＋ Ajouter des sons" HorizontalAlignment="Right" Padding="12,6" Click="OnAddSound"/>
-                        </Grid>
-                    </StackPanel>
-                </Border>
+                    </DockPanel>
+                </Grid>
+
+                <!-- Page: settings -->
+                <ScrollViewer x:Name="PageSettings" Grid.Row="1" VerticalScrollBarVisibility="Auto" Visibility="Collapsed" local:SmoothScroll.IsEnabled="True">
+                    <Grid Margin="0,0,8,24">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="16"/>
+                            <ColumnDefinition Width="*"/>
+                        </Grid.ColumnDefinitions>
+
+                        <StackPanel Grid.Column="0">
+                            <Border Style="{StaticResource Card}">
+                                <StackPanel>
+                                    <Grid>
+                                        <TextBlock Text="Appareils" Style="{StaticResource SectionTitle}"/>
+                                        <Button Style="{StaticResource GhostButton}" HorizontalAlignment="Right" VerticalAlignment="Top" Margin="0,-6,-8,0"
+                                                Click="OnRefreshDevices" ToolTip="Actualiser la liste">
+                                            <StackPanel Orientation="Horizontal">
+                                                <TextBlock Style="{StaticResource Icon}" Text="&#xE72C;" FontSize="12"/>
+                                                <TextBlock Text="Actualiser" Margin="8,0,0,0" FontSize="12"/>
+                                            </StackPanel>
+                                        </Button>
+                                    </Grid>
+
+                                    <TextBlock Text="Microphone" Style="{StaticResource Label}" Margin="0,0,0,5"/>
+                                    <ComboBox x:Name="MicCombo" SelectionChanged="OnDeviceChanged"/>
+                                    <Grid Margin="0,14,0,0">
+                                        <TextBlock Text="Gain du micro" Style="{StaticResource Label}" Margin="0"/>
+                                        <TextBlock HorizontalAlignment="Right" Foreground="{StaticResource MutedBrush}" FontSize="12"
+                                                   Text="{Binding Value, ElementName=GainSlider, StringFormat={}{0:P0}}"/>
+                                    </Grid>
+                                    <Slider x:Name="GainSlider" Minimum="0" Maximum="3" Value="1" Margin="0,4,0,0" ValueChanged="OnGainChanged"/>
+
+                                    <TextBlock Text="Sortie vers Discord / jeux / OBS" Style="{StaticResource Label}" Margin="0,16,0,5"/>
+                                    <ComboBox x:Name="OutputCombo" SelectionChanged="OnDeviceChanged"/>
+
+                                    <CheckBox x:Name="MonitorCheck" Content="M'écouter dans le casque" Margin="0,20,0,0"
+                                              Checked="OnDeviceChanged" Unchecked="OnDeviceChanged"/>
+                                    <ComboBox x:Name="MonitorCombo" Margin="0,10,0,0" SelectionChanged="OnDeviceChanged"/>
+                                    <TextBlock Style="{StaticResource Hint}" Text="Utilise un casque : avec des haut-parleurs, le micro réentend sa propre voix et ça siffle."/>
+                                </StackPanel>
+                            </Border>
+
+                            <Border Style="{StaticResource Card}">
+                                <StackPanel>
+                                    <TextBlock Text="Câble virtuel" Style="{StaticResource SectionTitle}"/>
+                                    <Border x:Name="CableBadge" CornerRadius="10" Padding="12,10" Background="{StaticResource Panel2Brush}">
+                                        <StackPanel Orientation="Horizontal">
+                                            <TextBlock x:Name="CableIcon" Style="{StaticResource Icon}" Text="&#xE7BA;" FontSize="16" Foreground="{StaticResource WarnBrush}"/>
+                                            <TextBlock x:Name="CableHint" Margin="10,0,0,0" TextWrapping="Wrap" VerticalAlignment="Center" MaxWidth="380"/>
+                                        </StackPanel>
+                                    </Border>
+                                    <TextBlock Style="{StaticResource Hint}" Margin="0,10,0,0"
+                                               Text="Le câble virtuel (VB-Cable, gratuit) crée un faux micro « CABLE Output ». VoxForge joue ta voix forgée dedans, et Discord, OBS ou ton jeu l'écoutent comme un vrai micro."/>
+                                    <StackPanel x:Name="CableSteps" Margin="0,12,0,0">
+                                        <Button x:Name="InstallCableButton" Style="{StaticResource PrimaryButton}" HorizontalAlignment="Left" Padding="16,9" FontSize="13"
+                                                Click="OnInstallCable">
+                                            <StackPanel Orientation="Horizontal">
+                                                <TextBlock Style="{StaticResource Icon}" Text="&#xE896;" FontSize="12"/>
+                                                <TextBlock x:Name="InstallCableLabel" Text="Installer le câble virtuel" Margin="8,0,0,0"/>
+                                            </StackPanel>
+                                        </Button>
+                                        <TextBlock Style="{StaticResource Hint}" Margin="0,8,0,0"
+                                                   Text="VoxForge télécharge l'installeur officiel de vb-audio.com et le lance. Windows te demande l'autorisation : clique Oui, puis « Install Driver ». Redémarre ensuite le PC."/>
+                                    </StackPanel>
+                                </StackPanel>
+                            </Border>
+                        </StackPanel>
+
+                        <StackPanel Grid.Column="2">
+                            <Border Style="{StaticResource Card}">
+                                <StackPanel>
+                                    <TextBlock Text="Raccourcis" Style="{StaticResource SectionTitle}" Margin="0,0,0,4"/>
+                                    <TextBlock Style="{StaticResource Hint}" Margin="0,0,0,12"
+                                               Text="Ils marchent partout, même en jeu. Clic droit sur une voix ou un son pour lui en donner un."/>
+                                    <ItemsControl x:Name="ActionHotkeys">
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate>
+                                                <Grid Margin="0,0,0,8">
+                                                    <Grid.ColumnDefinitions>
+                                                        <ColumnDefinition Width="*"/>
+                                                        <ColumnDefinition Width="Auto"/>
+                                                    </Grid.ColumnDefinitions>
+                                                    <TextBlock Text="{Binding Label}" VerticalAlignment="Center" TextWrapping="Wrap"/>
+                                                    <Button Grid.Column="1" Content="{Binding ButtonText}" MinWidth="120" Padding="10,6" FontSize="12"
+                                                            Margin="10,0,0,0" Click="OnEditActionHotkey" ToolTip="Clique pour changer"/>
+                                                </Grid>
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
+                                </StackPanel>
+                            </Border>
+
+                            <Border Style="{StaticResource Card}">
+                                <StackPanel>
+                                    <TextBlock Text="Fenêtre" Style="{StaticResource SectionTitle}"/>
+                                    <CheckBox x:Name="TrayCheck" Content="Fermer = rester en arrière-plan" Checked="OnTrayOptionChanged" Unchecked="OnTrayOptionChanged"/>
+                                    <TextBlock Style="{StaticResource Hint}" Margin="0,10,0,0"
+                                               Text="La croix cache VoxForge dans la zone de notification (flèche en bas à droite) : ta voix continue. Clic droit sur l'icône pour quitter."/>
+                                </StackPanel>
+                            </Border>
+                        </StackPanel>
+                    </Grid>
+                </ScrollViewer>
             </Grid>
         </Grid>
-
-        <!-- Footer -->
-        <TextBlock Grid.Row="2" Margin="10,2,10,4" Foreground="{StaticResource MutedBrush}" FontSize="12" TextWrapping="Wrap"
-                   Text="Dans Discord, OBS ou ton jeu, choisis « CABLE Output (VB-Audio Virtual Cable) » comme micro pour qu'ils entendent ta voix forgée."/>
-    </Grid>
+    </Border>
 </Window>

@@ -3,7 +3,9 @@ using System.ComponentModel;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
+using System.Windows.Data;
 using System.Windows.Media;
+using System.Windows.Media.Animation;
 using System.Windows.Threading;
 using Microsoft.Win32;
 using VoxForge.Audio;
@@ -26,12 +28,24 @@ public partial class MainWindow : Window
     private double inputLevel;
     private double outputLevel;
     private bool loading = true;
+    private readonly ListCollectionView voiceView;
+    private CancellationTokenSource? download;
+
+    /// <summary>A voice category chip; a null key shows every voice.</summary>
+    public sealed record CategoryChip(string? Key, string Name, int Count);
 
     public MainWindow()
     {
         InitializeComponent();
 
-        PresetList.ItemsSource = VoicePreset.All;
+        voiceView = new ListCollectionView(VoicePreset.All.ToList());
+        voiceView.GroupDescriptions.Add(new PropertyGroupDescription(nameof(VoicePreset.Category)));
+        PresetList.ItemsSource = voiceView;
+        var chips = new List<CategoryChip> { new(null, "Toutes", VoicePreset.All.Count) };
+        chips.AddRange(VoicePreset.All.GroupBy(p => p.Category).Select(g => new CategoryChip(g.Key, g.Key, g.Count())));
+        CategoryList.ItemsSource = chips;
+        CategoryList.SelectedIndex = 0;
+        VersionText.Text = "v" + (typeof(MainWindow).Assembly.GetName().Version?.ToString(3) ?? "");
         EffectList.ItemsSource = engine.Effects.All;
         BoardList.ItemsSource = boards;
         LoadBoards();
@@ -46,7 +60,7 @@ public partial class MainWindow : Window
             SetStatus($"Erreur audio : {message}", warn: true);
         });
 
-        meterTimer = new DispatcherTimer(TimeSpan.FromMilliseconds(40), DispatcherPriority.Render, (_, _) => UpdateMeters(), Dispatcher);
+        meterTimer = new DispatcherTimer(TimeSpan.FromMilliseconds(30), DispatcherPriority.Render, (_, _) => UpdateMeters(), Dispatcher);
         meterTimer.Start();
 
         actionTargets = new List<HotkeyTarget>
@@ -62,6 +76,7 @@ public partial class MainWindow : Window
         settings.Hotkeys ??= DefaultHotkeys();
         SourceInitialized += (_, _) =>
         {
+            WindowLook.Apply(this);
             hotkeys = new HotkeyManager(this);
             ApplyHotkeys();
             tray = new TrayIcon((ImageSource)FindResource("LogoImage"),
@@ -72,6 +87,59 @@ public partial class MainWindow : Window
                 quit: QuitApp);
             UpdateTray();
         };
+        Loaded += (_, _) => Navigate(settings.Page);
+    }
+
+    // ---------- Window chrome and navigation ----------
+
+    private void OnMinimize(object sender, RoutedEventArgs e) => WindowState = WindowState.Minimized;
+
+    private void OnMaximize(object sender, RoutedEventArgs e) =>
+        WindowState = WindowState == WindowState.Maximized ? WindowState.Normal : WindowState.Maximized;
+
+    private void OnCloseClick(object sender, RoutedEventArgs e) => Close();
+
+    private void OnWindowStateChanged(object? sender, EventArgs e)
+    {
+        // A maximised custom-chrome window overhangs the screen by the resize border.
+        RootFrame.Margin = WindowState == WindowState.Maximized ? new Thickness(7) : new Thickness(0);
+        MaxButton.Content = WindowState == WindowState.Maximized ? "\uE923" : "\uE922";
+    }
+
+    private void Navigate(string? page)
+    {
+        var target = page switch
+        {
+            "effects" => NavEffects,
+            "sounds" => NavSounds,
+            "settings" => NavSettings,
+            _ => NavVoices,
+        };
+        if (target.IsChecked == true) OnNavigate(target, new RoutedEventArgs());
+        else target.IsChecked = true;
+    }
+
+    private void OnNavigate(object sender, RoutedEventArgs e)
+    {
+        if (PageVoices is null) return; // still loading XAML
+        var (page, key, title, subtitle) = sender == NavEffects ? ((FrameworkElement)PageEffects, "effects", "Effets", "Règle chaque effet à la main, ou combine-les.")
+            : sender == NavSounds ? (PageSounds, "sounds", "Soundboards", "Joue des sons et des musiques dans ta voix.")
+            : sender == NavSettings ? (PageSettings, "settings", "Réglages", "Micro, sortie, câble virtuel et raccourcis.")
+            : (PageVoices, "voices", "Voix", "Choisis une voix, elle s'applique tout de suite.");
+        foreach (var other in new FrameworkElement[] { PageVoices, PageEffects, PageSounds, PageSettings })
+            other.Visibility = other == page ? Visibility.Visible : Visibility.Collapsed;
+        PageTitle.Text = title;
+        PageSubtitle.Text = subtitle;
+        settings.Page = key;
+        WindowLook.Reveal(page);
+    }
+
+    private void OnCategoryChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (voiceView is null) return;
+        string? key = (CategoryList.SelectedItem as CategoryChip)?.Key;
+        voiceView.Filter = key is null ? null : o => ((VoicePreset)o).Category == key;
+        if (!loading) WindowLook.Reveal(PresetList);
     }
 
     // ---------- Notification area ----------
@@ -222,6 +290,7 @@ public partial class MainWindow : Window
 
     private void SelectVoice(VoicePreset preset)
     {
+        if (!voiceView.PassesFilter(preset)) CategoryList.SelectedIndex = 0;
         PresetList.SelectedItem = preset;
         PresetList.ScrollIntoView(preset);
         SetStatus("Voix : " + preset.Name, ok: engine.IsRunning);
@@ -273,9 +342,11 @@ public partial class MainWindow : Window
 
         bool cablePresent = outputs.Any(d => d.IsVirtualCableInput);
         CableHint.Text = cablePresent
-            ? "✓ VB-Cable détecté. Choisis « CABLE Input » ici."
-            : "VB-Cable non détecté. Installe-le (gratuit, vb-audio.com/Cable), redémarre le PC puis clique sur Actualiser. En attendant, active « M'écouter » pour tester.";
-        CableHint.Foreground = (Brush)FindResource(cablePresent ? "OkBrush" : "WarnBrush");
+            ? "Câble détecté. Sortie : « CABLE Input ». Dans Discord / OBS, choisis le micro « CABLE Output »."
+            : "Câble non installé : Discord, OBS et tes jeux ne peuvent pas encore entendre ta voix forgée. En attendant, active « M'écouter » pour tester.";
+        CableIcon.Text = cablePresent ? "\uE73E" : "\uE7BA";
+        CableIcon.Foreground = (Brush)FindResource(cablePresent ? "OkBrush" : "WarnBrush");
+        CableSteps.Visibility = cablePresent ? Visibility.Collapsed : Visibility.Visible;
 
         loading = wasLoading;
     }
@@ -339,6 +410,7 @@ public partial class MainWindow : Window
         try
         {
             engine.Start(mic.Id, outputId, monitorId);
+            engine.Soundboard.SampleRate = engine.SampleRate;
             PrepareClipsInBackground(boards.SelectMany(b => b.Clips).ToList());
         }
         catch (Exception ex)
@@ -357,6 +429,8 @@ public partial class MainWindow : Window
         {
             foreach (var clip in clips)
             {
+                // Long music is decoded when first played, so memory stays small at start.
+                if (clip.FilePath is not null && new FileInfo(clip.FilePath) is { Exists: true, Length: > 3_000_000 }) continue;
                 try { clip.GetSamples(rate); } catch { /* reported when played */ }
             }
         });
@@ -364,7 +438,9 @@ public partial class MainWindow : Window
 
     private void UpdateRunState(bool keepStatus = false)
     {
-        StartButton.Content = engine.IsRunning ? "■  Arrêter" : "▶  Démarrer";
+        StartLabel.Text = engine.IsRunning ? "Arrêter" : "Démarrer";
+        StartIcon.Text = engine.IsRunning ? "\uE71A" : "\uE768";
+        UpdatePulse();
         UpdateTray();
         if (keepStatus) return;
         if (engine.IsRunning)
@@ -378,6 +454,27 @@ public partial class MainWindow : Window
         StatusText.Text = text;
         StatusText.ToolTip = text;
         StatusDot.Fill = (Brush)FindResource(ok ? "OkBrush" : warn ? "WarnBrush" : "MutedBrush");
+        StatusPill.BeginAnimation(OpacityProperty, new DoubleAnimation(0.35, 1, TimeSpan.FromMilliseconds(260)));
+    }
+
+    /// <summary>A soft ring pulses around the status dot while the voice is live.</summary>
+    private void UpdatePulse()
+    {
+        if (engine.IsRunning)
+        {
+            var period = TimeSpan.FromSeconds(1.6);
+            var grow = new DoubleAnimation(1, 2.6, period) { RepeatBehavior = RepeatBehavior.Forever, EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut } };
+            PulseScale.BeginAnimation(ScaleTransform.ScaleXProperty, grow);
+            PulseScale.BeginAnimation(ScaleTransform.ScaleYProperty, grow);
+            StatusPulse.BeginAnimation(OpacityProperty, new DoubleAnimation(0.55, 0, period) { RepeatBehavior = RepeatBehavior.Forever });
+        }
+        else
+        {
+            PulseScale.BeginAnimation(ScaleTransform.ScaleXProperty, null);
+            PulseScale.BeginAnimation(ScaleTransform.ScaleYProperty, null);
+            StatusPulse.BeginAnimation(OpacityProperty, null);
+            StatusPulse.Opacity = 0;
+        }
     }
 
     private void UpdateMeters()
@@ -386,6 +483,9 @@ public partial class MainWindow : Window
         outputLevel = Smooth(outputLevel, ToMeter(engine.TakeOutputPeak()));
         InputMeter.Value = inputLevel;
         OutputMeter.Value = outputLevel;
+
+        if (SoundPads.ItemsSource is IEnumerable<SoundClip> pads)
+            foreach (var clip in pads) clip.PlayProgress = engine.IsRunning ? engine.Soundboard.ProgressOf(clip) : -1;
     }
 
     /// <summary>Peak 0..1 to a 60 dB meter scale.</summary>
@@ -443,7 +543,7 @@ public partial class MainWindow : Window
         {
             SetStatus($"Soundboards illisibles : {ex.Message}", warn: true);
         }
-        if (boards.Count == 1) boards.Add(SoundBoardLibrary.Create("Mes sons"));
+        if (!boards.Any(b => !b.IsBuiltIn)) boards.Add(SoundBoardLibrary.Create("Mes sons"));
         BoardList.SelectedItem = boards.FirstOrDefault(b => b.Name == settings.Board) ?? boards.FirstOrDefault();
     }
 
@@ -455,9 +555,12 @@ public partial class MainWindow : Window
         RenameBoardButton.IsEnabled = editable;
         DeleteBoardButton.IsEnabled = editable;
         AddSoundButton.IsEnabled = editable;
+        AddLinkButton.IsEnabled = editable && download is null;
+        RenameBoardButton.Visibility = DeleteBoardButton.Visibility = editable ? Visibility.Visible : Visibility.Collapsed;
         BoardHint.Text = editable
-            ? "Glisse-dépose des fichiers ici ou clique sur « Ajouter des sons ». Clic droit sur un son pour le retirer."
-            : "Sons intégrés à VoxForge. Crée ta propre soundboard pour ajouter tes sons.";
+            ? "Glisse-dépose des fichiers ici, ajoute des sons ou colle un lien. Clic sur un son qui joue pour l'arrêter. Clic droit : raccourci ou retirer."
+            : "Soundboard fournie avec VoxForge (sons créés par l'app). Crée ta propre soundboard pour ajouter tes sons et musiques.";
+        if (!loading) WindowLook.Reveal(SoundPads);
         if (board is not null) settings.Board = board.Name;
     }
 
@@ -601,20 +704,137 @@ public partial class MainWindow : Window
         if ((sender as FrameworkElement)?.DataContext is SoundClip clip) PlayClip(clip);
     }
 
-    private void PlayClip(SoundClip clip)
+    private async void PlayClip(SoundClip clip)
     {
         if (!engine.IsRunning)
         {
             SetStatus("Démarre VoxForge pour jouer un son", warn: true);
             return;
         }
+        if (clip.IsPlaying)
+        {
+            engine.Soundboard.Stop(clip); // a second click stops it, handy for music
+            return;
+        }
         try
         {
-            engine.Soundboard.Play(clip);
+            int rate = engine.SampleRate;
+            if (!clip.IsReady(rate))
+            {
+                SetStatus($"Chargement de « {clip.Name} »…");
+                await Task.Run(() => clip.GetSamples(rate));
+                SetStatus("En direct · " + clip.Name, ok: true);
+            }
+            if (engine.IsRunning) engine.Soundboard.Play(clip);
         }
         catch (Exception ex)
         {
             SetStatus($"Son illisible : {ex.Message}", warn: true);
+        }
+    }
+
+    // ---------- Sounds from links ----------
+
+    private async void OnAddLink(object sender, RoutedEventArgs e)
+    {
+        if (CurrentBoard is not { IsBuiltIn: false } board || download is not null) return;
+        string clipboard = "";
+        try { clipboard = Clipboard.ContainsText() ? Clipboard.GetText().Trim() : ""; } catch { /* clipboard busy */ }
+        string? url = TextPrompt.Ask(this, "Ajouter depuis un lien", "Colle le lien du son ou de la musique :",
+            LinkImporter.IsLink(clipboard) ? clipboard : "",
+            hint: "Un lien direct vers un fichier son (.mp3, .wav, .m4a…) marche tout de suite. Pour YouTube, SoundCloud ou TikTok, " +
+                  "VoxForge utilise l'outil gratuit yt-dlp s'il est installé. Le son est ensuite enregistré dans cette soundboard.",
+            okText: "Télécharger");
+        if (url is null) return;
+        if (!LinkImporter.IsLink(url))
+        {
+            SetStatus("Ce n'est pas un lien web (http:// ou https://)", warn: true);
+            return;
+        }
+
+        string temp = Path.Combine(Path.GetTempPath(), "VoxForge", "Downloads", Guid.NewGuid().ToString("N"));
+        download = new CancellationTokenSource();
+        AddLinkButton.IsEnabled = false;
+        DownloadPanel.Visibility = Visibility.Visible;
+        WindowLook.Reveal(DownloadPanel);
+        DownloadText.Text = "Téléchargement de " + url;
+        DownloadBar.Value = 0;
+        var progress = new Progress<double>(p => DownloadBar.Value = p);
+        try
+        {
+            string file = await LinkImporter.DownloadAsync(url, temp, progress, download.Token);
+            DownloadText.Text = "Préparation de « " + Path.GetFileNameWithoutExtension(file) + " »…";
+            DownloadBar.Value = 1;
+            int rate = engine.SampleRate;
+            var clip = await Task.Run(() => SoundBoardLibrary.ImportFile(board, file, rate));
+            board.Clips.Add(clip);
+            ApplyHotkeys();
+            SetStatus($"« {clip.Name} » ajouté à « {board.Name} »", ok: true);
+        }
+        catch (OperationCanceledException)
+        {
+            SetStatus("Téléchargement annulé");
+        }
+        catch (NeedsPageToolException)
+        {
+            SetStatus("Lien de page web : installe yt-dlp pour ce site", warn: true);
+            MessageBox.Show(this,
+                "Ce lien mène à une page (vidéo, musique en ligne), pas directement à un fichier son.\n\n" +
+                "Pour ces sites, VoxForge s'appuie sur yt-dlp, un outil gratuit. Installe-le une fois, par exemple avec la commande :\n" +
+                "    winget install yt-dlp.yt-dlp\n" +
+                "puis relance VoxForge et colle à nouveau le lien.\n\nUn lien direct vers un .mp3 ou un .wav marche sans rien installer.",
+                "Ajouter depuis un lien", MessageBoxButton.OK, MessageBoxImage.Information);
+        }
+        catch (Exception ex)
+        {
+            SetStatus("Lien impossible : " + ex.Message, warn: true);
+        }
+        finally
+        {
+            download.Dispose();
+            download = null;
+            DownloadPanel.Visibility = Visibility.Collapsed;
+            AddLinkButton.IsEnabled = CurrentBoard is { IsBuiltIn: false };
+            try { Directory.Delete(temp, recursive: true); } catch { /* temp folder */ }
+        }
+    }
+
+    private void OnCancelDownload(object sender, RoutedEventArgs e) => download?.Cancel();
+
+    // ---------- Virtual cable ----------
+
+    private async void OnInstallCable(object sender, RoutedEventArgs e)
+    {
+        InstallCableButton.IsEnabled = false;
+        InstallCableLabel.Text = "Téléchargement…";
+        try
+        {
+            var progress = new Progress<double>(p => InstallCableLabel.Text = $"Téléchargement… {p:P0}");
+            var result = await CableInstaller.DownloadAndRunAsync(progress, CancellationToken.None);
+            if (result == CableInstaller.Result.Started)
+            {
+                SetStatus("Installeur VB-Cable lancé : clique « Install Driver », puis redémarre le PC", ok: true);
+                MessageBox.Show(this,
+                    "L'installeur officiel de VB-Cable est ouvert.\n\n1. Clique sur « Install Driver ».\n2. Redémarre le PC quand c'est fini.\n" +
+                    "3. Rouvre VoxForge : la sortie « CABLE Input » sera choisie toute seule.\n4. Dans Discord / OBS / ton jeu, prends le micro « CABLE Output ».",
+                    "Câble virtuel", MessageBoxButton.OK, MessageBoxImage.Information);
+            }
+            else
+            {
+                SetStatus("Installation du câble annulée", warn: true);
+            }
+        }
+        catch (Exception ex)
+        {
+            SetStatus("Installation impossible : " + ex.Message, warn: true);
+            if (MessageBox.Show(this, ex.Message + "\n\nOuvrir la page officielle de VB-Cable pour l'installer à la main ?", "Câble virtuel",
+                    MessageBoxButton.YesNo, MessageBoxImage.Warning) == MessageBoxResult.Yes)
+                CableInstaller.OpenHomePage();
+        }
+        finally
+        {
+            InstallCableButton.IsEnabled = true;
+            InstallCableLabel.Text = "Installer le câble virtuel";
         }
     }
 

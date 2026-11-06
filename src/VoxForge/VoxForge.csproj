@@ -10,7 +10,7 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <AssemblyName>VoxForge</AssemblyName>
     <RootNamespace>VoxForge</RootNamespace>
-    <Version>0.3.0</Version>
+    <Version>0.4.0</Version>
     <Product>VoxForge</Product>
     <Description>Real-time voice changer and soundboard for Windows.</Description>
   </PropertyGroup>
