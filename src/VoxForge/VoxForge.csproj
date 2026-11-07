@@ -13,6 +13,7 @@
     <Version>0.5.0</Version>
     <Product>VoxForge</Product>
     <Description>Real-time voice changer and soundboard for Windows.</Description>
+    <ApplicationIcon>VoxForge.ico</ApplicationIcon>
   </PropertyGroup>
 
   <ItemGroup>
